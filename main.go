@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"ollama-demo/page_rank"
 	"os"
 	"strings"
 
@@ -22,12 +23,21 @@ type ChatState struct {
 	Messages []llms.MessageContent
 }
 
+type AgentState struct {
+}
+
 func main() {
-	demo1()
+	// demo1()
+	page_rank.Verify()
 }
 
 func demo() {
-	// g := graph.NewStateGraph[MyState]()
+	g := graph.NewStateGraph[MyState]()
+	// 节点函数自动推断类型
+	g.AddNode("inc", "增加", func(ctx context.Context, state MyState) (MyState, error) {
+		state.Count++ // 编译时类型检查，无需断言！
+		return state, nil
+	})
 }
 
 // original version
@@ -133,3 +143,9 @@ func demo1() {
 		}
 	}
 }
+
+const (
+	MaxIterations     = 30
+	ConvergenceThresh = 0.0001
+	DampingFactor     = 0.85
+)
