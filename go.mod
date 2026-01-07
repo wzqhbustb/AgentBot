@@ -3,7 +3,7 @@ module ollama-demo
 go 1.25.0
 
 require (
-	github.com/smallnest/langgraphgo v0.6.3
+	github.com/smallnest/langgraphgo v0.8.2
 	github.com/tmc/langchaingo v0.1.14
 )
 
