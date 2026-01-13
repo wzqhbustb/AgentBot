@@ -28,3 +28,16 @@ type BackoffStrategy int
 
 // StateMerger is a typed function to merge states from parallel execution.
 type TypedStateMerger[S any] func(ctx context.Context, currentState S, newStates []S) (S, error)
+
+func NewStateGraph[S any]() *StateGraph[S] {
+	return &StateGraph[S]{
+		nodes:            make(map[string]TypedNode[S]),
+		conditionalEdges: make(map[string]func(ctx context.Context, state S) string),
+	}
+}
+
+type StateRunnable[S any] struct {
+	graph *StateGraph[S]
+	// tracer *Tracer
+	nodeRunner func(ctx context.Context, nodeName string, state S) (S, error)
+}
