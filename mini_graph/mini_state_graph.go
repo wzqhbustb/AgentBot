@@ -7,6 +7,7 @@ type StateGraph[S any] struct {
 	edges            []Edge
 	conditionalEdges map[string]func(ctx context.Context, state S) string
 	entryPoint       string
+	retryPolicy      *RetryPolicy
 }
 
 type TypedNode[S any] struct {
@@ -22,3 +23,6 @@ type RetryPolicy struct {
 }
 
 type BackoffStrategy int
+
+// StateMerger is a typed function to merge states from parallel execution.
+type TypedStateMerger[S any] func(ctx context.Context, currentState S, newStates []S) (S, error)
