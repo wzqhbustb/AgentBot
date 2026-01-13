@@ -8,6 +8,8 @@ type StateGraph[S any] struct {
 	conditionalEdges map[string]func(ctx context.Context, state S) string
 	entryPoint       string
 	retryPolicy      *RetryPolicy
+	stateMerger      TypedStateMerger[S]
+	Schema           StateSchema[S]
 }
 
 type TypedNode[S any] struct {
