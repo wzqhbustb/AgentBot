@@ -149,3 +149,23 @@ const (
 	ConvergenceThresh = 0.0001
 	DampingFactor     = 0.85
 )
+
+type SchemaTestState struct {
+	Count int
+	Logs  []string
+	Max   int
+}
+
+func schemaDemo() {
+	_ = graph.NewStructSchema[SchemaTestState](SchemaTestState{Count: 0, Max: 0},
+		func(current, new SchemaTestState) (SchemaTestState, error) {
+			// Define your own merge policy
+			current.Count += new.Count
+			current.Logs = append(current.Logs, new.Logs...)
+			if new.Max > current.Max {
+				current.Max = new.Max
+			}
+			return current, nil
+		},
+	)
+}
