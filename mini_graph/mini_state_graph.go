@@ -41,3 +41,12 @@ type StateRunnable[S any] struct {
 	// tracer *Tracer
 	nodeRunner func(ctx context.Context, nodeName string, state S) (S, error)
 }
+
+func (g *StateGraph[S]) Compile() (*StateRunnable[S], error) {
+	if g.entryPoint == "" {
+		return nil, ErrEntryPointNotSet
+	}
+	return &StateRunnable[S]{
+		graph: g,
+	}, nil
+}
