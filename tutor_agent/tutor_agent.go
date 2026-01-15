@@ -174,8 +174,6 @@ func (t *TutorAgent) loadFile(path string) (string, error) {
 // analyzeDocuments 使用 AI 分析文档内容
 func (t *TutorAgent) analyzeDocuments(ctx context.Context, state TutorState) (TutorState, error) {
 	fmt.Println("\n🔍 正在分析文档内容...")
-
-	// ⚠️⚠️⚠️ 【新增】计算总字符数，用于显示进度 ⚠️⚠️⚠️
 	totalChars := 0
 	for _, content := range state.DocumentContents {
 		totalChars += len(content)
@@ -185,7 +183,6 @@ func (t *TutorAgent) analyzeDocuments(ctx context.Context, state TutorState) (Tu
 	var docsBuilder strings.Builder
 	docsBuilder.WriteString("以下是需要学习的文档内容：\n\n")
 
-	// ⚠️⚠️⚠️ 【新增】添加进度跟踪 ⚠️⚠️⚠️
 	processedChars := 0
 	fileCount := 0
 	totalFiles := len(state.DocumentContents)
@@ -207,7 +204,6 @@ func (t *TutorAgent) analyzeDocuments(ctx context.Context, state TutorState) (Tu
 			docsBuilder.WriteString("\n\n")
 		}
 
-		// ⚠️⚠️⚠️ 【新增】更新并显示进度 ⚠️⚠️⚠️
 		processedChars += len(content)
 		progress := float64(processedChars) / float64(totalChars) * 100
 		fmt.Printf("   ⏳ 加载进度: %.1f%% (%d/%d 字符)\n", progress, processedChars, totalChars)
@@ -235,8 +231,6 @@ func (t *TutorAgent) analyzeDocuments(ctx context.Context, state TutorState) (Tu
 
 	var summaryBuilder strings.Builder
 	var isThinking bool
-
-	// ⚠️⚠️⚠️ 【新增】添加字符计数，用于显示分析进度 ⚠️⚠️⚠️
 	var charCount int
 
 	response, err := t.model.GenerateContent(ctx, messages,
@@ -253,7 +247,7 @@ func (t *TutorAgent) analyzeDocuments(ctx context.Context, state TutorState) (Tu
 			}
 			if strings.Contains(text, "</think>") {
 				isThinking = false
-				fmt.Println("\n")
+				fmt.Println("")
 				return nil
 			}
 
@@ -266,7 +260,6 @@ func (t *TutorAgent) analyzeDocuments(ctx context.Context, state TutorState) (Tu
 				cleanText = strings.ReplaceAll(cleanText, "</think>", "")
 				if cleanText != "" {
 					summaryBuilder.WriteString(cleanText)
-					// ⚠️⚠️⚠️ 【新增】实时显示生成的字符数 ⚠️⚠️⚠️
 					charCount += len(cleanText)
 					fmt.Print(cleanText)
 				}
@@ -305,7 +298,6 @@ func (t *TutorAgent) analyzeDocuments(ctx context.Context, state TutorState) (Tu
 		llms.TextParts(llms.ChatMessageTypeAI, state.DocumentSummary),
 	}
 
-	// ⚠️⚠️⚠️ 【修改】优化输出格式 ⚠️⚠️⚠️
 	fmt.Println("\n" + strings.Repeat("=", 60))
 	fmt.Printf("✅ 分析完成！生成了 %d 字符的分析报告\n", len(state.DocumentSummary))
 	fmt.Println(strings.Repeat("=", 60))
@@ -370,7 +362,7 @@ func (t *TutorAgent) chat(ctx context.Context, state TutorState) (TutorState, er
 			// 检测思考过程的结束标记
 			if strings.Contains(text, "</think>") {
 				isThinking = false
-				fmt.Println("\n")
+				fmt.Println("")
 				fmt.Print("🎓 助教: ")
 				return nil
 			}
@@ -436,21 +428,10 @@ func (t *TutorAgent) Run() error {
 		Stage:            "init",
 	}
 
-	// 执行工作流
-	// ⚠️⚠️⚠️ 【修改4】删除 finalState 变量，不再需要在这里显示退出消息 ⚠️⚠️⚠️
-	// 原代码：finalState, err := t.graph.Invoke(ctx, initialState)
-	// 修改为：
 	_, err := t.graph.Invoke(ctx, initialState)
 	if err != nil {
 		return fmt.Errorf("执行失败: %v", err)
 	}
-
-	// ⚠️⚠️⚠️ 【修改5】删除这里的退出消息，已经在 chat() 函数中显示 ⚠️⚠️⚠️
-	// 原代码：
-	// if finalState.Stage != "init" {
-	// 	fmt.Println("\n👋 感谢使用智能助教系统！祝学习愉快！")
-	// }
-	// 删除上述代码
 
 	return nil
 }
