@@ -89,16 +89,18 @@ func (t *TutorAgent) buildGraph() error {
 	// 3. Chat node
 	g.AddNode("chat", "chat", t.chat)
 
-	// 4. Check continue node
-	g.AddNode("check_continue", "check continue", t.checkContinue)
+	// 4. Check continue node, no need the continue check again
+	// g.AddNode("check_continue", "check continue", t.checkContinue)
 
 	// Set edges
 	g.AddEdge("load_documents", "analyze_documents")
 	g.AddEdge("analyze_documents", "chat")
-	g.AddEdge("chat", "check_continue")
+
+	// no need the check continue node anymore
+	// g.AddEdge("chat", "check_continue")
 
 	// Conditional edge: decide the flow based on whether the user wants to continue
-	g.AddConditionalEdge("check_continue", func(ctx context.Context, state TutorState) string {
+	g.AddConditionalEdge("check", func(ctx context.Context, state TutorState) string {
 		if state.ShouldContinue {
 			return "chat" // continue chatting
 		}
@@ -231,18 +233,20 @@ func (t *TutorAgent) analyzeDocuments(ctx context.Context, state TutorState) (Tu
 	fmt.Println("\n" + strings.Repeat("=", 60))
 	fmt.Printf("🎓 助教分析：\n\n%s\n", state.DocumentSummary)
 	fmt.Println(strings.Repeat("=", 60))
+	fmt.Println("\n💡 提示：输入 'quit' 或 'exit' 可以退出，直接回车也会退出")
 
 	state.Stage = "analysis_complete"
 	state.ShouldContinue = true
 	return state, nil
 }
 
-// chat 对话交互
+// chat 对话交互 - 支持多轮对话
 func (t *TutorAgent) chat(ctx context.Context, state TutorState) (TutorState, error) {
 	// 获取用户输入
 	fmt.Print("\n💬 你的问题: ")
 	if !t.scanner.Scan() {
-		return state, fmt.Errorf("读取输入失败")
+		state.ShouldContinue = false
+		return state, nil
 	}
 
 	userInput := strings.TrimSpace(t.scanner.Text())
@@ -251,6 +255,7 @@ func (t *TutorAgent) chat(ctx context.Context, state TutorState) (TutorState, er
 	// 检查退出命令
 	if userInput == "quit" || userInput == "exit" || userInput == "" {
 		state.ShouldContinue = false
+		fmt.Println("\n👋 感谢使用智能助教系统！祝学习愉快！")
 		return state, nil
 	}
 
@@ -266,7 +271,10 @@ func (t *TutorAgent) chat(ctx context.Context, state TutorState) (TutorState, er
 		llms.WithMaxTokens(3000),
 	)
 	if err != nil {
-		return state, fmt.Errorf("生成回复失败: %v", err)
+		fmt.Printf("\n❌ 生成回复失败: %v\n", err)
+		// 即使出错也继续对话
+		state.ShouldContinue = true
+		return state, nil
 	}
 
 	fmt.Print("\r" + strings.Repeat(" ", 30) + "\r") // 清除"思考中"提示
@@ -280,30 +288,9 @@ func (t *TutorAgent) chat(ctx context.Context, state TutorState) (TutorState, er
 	// 显示回复
 	fmt.Printf("🎓 助教：\n%s\n", aiResponse)
 
+	// 继续对话循环
+	state.ShouldContinue = true
 	state.Stage = "chat_complete"
-	return state, nil
-}
-
-// checkContinue 检查是否继续对话
-func (t *TutorAgent) checkContinue(ctx context.Context, state TutorState) (TutorState, error) {
-	// 如果上一步已经决定退出，直接返回
-	if !state.ShouldContinue {
-		return state, nil
-	}
-
-	fmt.Print("\n继续提问？(回车继续, 输入 'quit' 退出): ")
-	if !t.scanner.Scan() {
-		state.ShouldContinue = false
-		return state, nil
-	}
-
-	input := strings.TrimSpace(t.scanner.Text())
-	if input == "quit" || input == "exit" {
-		state.ShouldContinue = false
-	} else {
-		state.ShouldContinue = true
-	}
-
 	return state, nil
 }
 
