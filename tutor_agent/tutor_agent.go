@@ -175,21 +175,45 @@ func (t *TutorAgent) loadFile(path string) (string, error) {
 func (t *TutorAgent) analyzeDocuments(ctx context.Context, state TutorState) (TutorState, error) {
 	fmt.Println("\n🔍 正在分析文档内容...")
 
+	// ⚠️⚠️⚠️ 【新增】计算总字符数，用于显示进度 ⚠️⚠️⚠️
+	totalChars := 0
+	for _, content := range state.DocumentContents {
+		totalChars += len(content)
+	}
+
 	// 构建文档内容摘要
 	var docsBuilder strings.Builder
 	docsBuilder.WriteString("以下是需要学习的文档内容：\n\n")
 
+	// ⚠️⚠️⚠️ 【新增】添加进度跟踪 ⚠️⚠️⚠️
+	processedChars := 0
+	fileCount := 0
+	totalFiles := len(state.DocumentContents)
+
 	for path, content := range state.DocumentContents {
+		fileCount++
+		fmt.Printf("📄 处理文件 [%d/%d]: %s\n", fileCount, totalFiles, filepath.Base(path))
+
 		docsBuilder.WriteString(fmt.Sprintf("=== 文件: %s ===\n", filepath.Base(path)))
+
 		// 如果文档太长，截取前面部分
+		contentToAdd := content
 		if len(content) > 8000 {
-			docsBuilder.WriteString(content[:8000])
+			contentToAdd = content[:8000]
+			docsBuilder.WriteString(contentToAdd)
 			docsBuilder.WriteString("\n\n[文档内容过长，已截取前 8000 字符]\n\n")
 		} else {
-			docsBuilder.WriteString(content)
+			docsBuilder.WriteString(contentToAdd)
 			docsBuilder.WriteString("\n\n")
 		}
+
+		// ⚠️⚠️⚠️ 【新增】更新并显示进度 ⚠️⚠️⚠️
+		processedChars += len(content)
+		progress := float64(processedChars) / float64(totalChars) * 100
+		fmt.Printf("   ⏳ 加载进度: %.1f%% (%d/%d 字符)\n", progress, processedChars, totalChars)
 	}
+
+	fmt.Println("\n✅ 文件加载完成，正在提交给助教分析...")
 
 	// 让 AI 分析文档
 	analysisPrompt := docsBuilder.String() + `
@@ -206,9 +230,14 @@ func (t *TutorAgent) analyzeDocuments(ctx context.Context, state TutorState) (Tu
 	}
 
 	fmt.Println() // 换行，让输出更清晰
+	fmt.Println("🤖 助教正在深度分析文档...")
+	fmt.Println(strings.Repeat("-", 60))
 
 	var summaryBuilder strings.Builder
 	var isThinking bool
+
+	// ⚠️⚠️⚠️ 【新增】添加字符计数，用于显示分析进度 ⚠️⚠️⚠️
+	var charCount int
 
 	response, err := t.model.GenerateContent(ctx, messages,
 		llms.WithTemperature(0.7),
@@ -237,6 +266,9 @@ func (t *TutorAgent) analyzeDocuments(ctx context.Context, state TutorState) (Tu
 				cleanText = strings.ReplaceAll(cleanText, "</think>", "")
 				if cleanText != "" {
 					summaryBuilder.WriteString(cleanText)
+					// ⚠️⚠️⚠️ 【新增】实时显示生成的字符数 ⚠️⚠️⚠️
+					charCount += len(cleanText)
+					fmt.Print(cleanText)
 				}
 			}
 
@@ -254,7 +286,7 @@ func (t *TutorAgent) analyzeDocuments(ctx context.Context, state TutorState) (Tu
 		state.DocumentSummary = response.Choices[0].Content
 	}
 
-	state.DocumentSummary = response.Choices[0].Content
+	// state.DocumentSummary = response.Choices[0].Content
 
 	// 初始化对话历史，包含文档内容和概述
 	state.Messages = []llms.MessageContent{
@@ -273,8 +305,9 @@ func (t *TutorAgent) analyzeDocuments(ctx context.Context, state TutorState) (Tu
 		llms.TextParts(llms.ChatMessageTypeAI, state.DocumentSummary),
 	}
 
+	// ⚠️⚠️⚠️ 【修改】优化输出格式 ⚠️⚠️⚠️
 	fmt.Println("\n" + strings.Repeat("=", 60))
-	fmt.Printf("🎓 助教分析：\n\n%s\n", state.DocumentSummary)
+	fmt.Printf("✅ 分析完成！生成了 %d 字符的分析报告\n", len(state.DocumentSummary))
 	fmt.Println(strings.Repeat("=", 60))
 	fmt.Println("\n💡 提示：输入 'quit' 或 'exit' 可以退出")
 
