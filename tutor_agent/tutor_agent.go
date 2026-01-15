@@ -100,7 +100,7 @@ func (t *TutorAgent) buildGraph() error {
 	// g.AddEdge("chat", "check_continue")
 
 	// Conditional edge: decide the flow based on whether the user wants to continue
-	g.AddConditionalEdge("check", func(ctx context.Context, state TutorState) string {
+	g.AddConditionalEdge("chat", func(ctx context.Context, state TutorState) string {
 		if state.ShouldContinue {
 			return "chat" // continue chatting
 		}
@@ -203,12 +203,53 @@ func (t *TutorAgent) analyzeDocuments(ctx context.Context, state TutorState) (Tu
 		llms.TextParts(llms.ChatMessageTypeHuman, analysisPrompt),
 	}
 
+	fmt.Println() // 换行，让输出更清晰
+
+	var summaryBuilder strings.Builder
+	var isThinking bool
+
 	response, err := t.model.GenerateContent(ctx, messages,
 		llms.WithTemperature(0.7),
 		llms.WithMaxTokens(2000),
+		llms.WithStreamingFunc(func(ctx context.Context, chunk []byte) error {
+			text := string(chunk)
+
+			// 检测思考过程标记
+			if strings.Contains(text, "<think>") {
+				isThinking = true
+				fmt.Print("💭 助教思考: ")
+				return nil
+			}
+			if strings.Contains(text, "</think>") {
+				isThinking = false
+				fmt.Println("\n")
+				return nil
+			}
+
+			// 输出思考过程或最终内容
+			if isThinking {
+				fmt.Print(text)
+			} else {
+				// 过滤掉标签
+				cleanText := strings.ReplaceAll(text, "<think>", "")
+				cleanText = strings.ReplaceAll(cleanText, "</think>", "")
+				if cleanText != "" {
+					summaryBuilder.WriteString(cleanText)
+				}
+			}
+
+			return nil
+		}),
 	)
 	if err != nil {
 		return state, fmt.Errorf("分析文档失败: %v", err)
+	}
+
+	// 如果有流式输出，使用 summaryBuilder 的内容，否则使用 response
+	if summaryBuilder.Len() > 0 {
+		state.DocumentSummary = summaryBuilder.String()
+	} else {
+		state.DocumentSummary = response.Choices[0].Content
 	}
 
 	state.DocumentSummary = response.Choices[0].Content
@@ -263,12 +304,56 @@ func (t *TutorAgent) chat(ctx context.Context, state TutorState) (TutorState, er
 	state.Messages = append(state.Messages,
 		llms.TextParts(llms.ChatMessageTypeHuman, userInput))
 
-	// 调用 AI 生成回复
-	fmt.Print("🤖 助教思考中...")
+	// 修改为：
+	fmt.Println() // 换行
+
+	var responseBuilder strings.Builder
+	var isThinking bool
+	var hasStartedOutput bool
 
 	response, err := t.model.GenerateContent(ctx, state.Messages,
 		llms.WithTemperature(0.7),
 		llms.WithMaxTokens(3000),
+		llms.WithStreamingFunc(func(ctx context.Context, chunk []byte) error {
+			text := string(chunk)
+
+			// 检测思考过程的开始标记
+			if strings.Contains(text, "<think>") {
+				isThinking = true
+				fmt.Print("💭 助教思考: ")
+				hasStartedOutput = true
+				return nil
+			}
+
+			// 检测思考过程的结束标记
+			if strings.Contains(text, "</think>") {
+				isThinking = false
+				fmt.Println("\n")
+				fmt.Print("🎓 助教: ")
+				return nil
+			}
+
+			// 输出思考过程或最终答案
+			if isThinking {
+				// 打印思考过程（过滤标签）
+				cleanText := strings.ReplaceAll(text, "<think>", "")
+				fmt.Print(cleanText)
+			} else {
+				// 输出最终答案
+				if !hasStartedOutput {
+					fmt.Print("🎓 助教: ")
+					hasStartedOutput = true
+				}
+				// 过滤标签
+				cleanText := strings.ReplaceAll(text, "</think>", "")
+				if cleanText != "" {
+					fmt.Print(cleanText)
+					responseBuilder.WriteString(cleanText)
+				}
+			}
+
+			return nil
+		}),
 	)
 	if err != nil {
 		fmt.Printf("\n❌ 生成回复失败: %v\n", err)
@@ -277,16 +362,19 @@ func (t *TutorAgent) chat(ctx context.Context, state TutorState) (TutorState, er
 		return state, nil
 	}
 
-	fmt.Print("\r" + strings.Repeat(" ", 30) + "\r") // 清除"思考中"提示
+	fmt.Println() // 回复结束后换行示
 
-	aiResponse := response.Choices[0].Content
+	// 获取 AI 回复内容
+	var aiResponse string
+	if responseBuilder.Len() > 0 {
+		aiResponse = responseBuilder.String()
+	} else {
+		aiResponse = response.Choices[0].Content
+	}
 
 	// 添加 AI 回复到历史
 	state.Messages = append(state.Messages,
 		llms.TextParts(llms.ChatMessageTypeAI, aiResponse))
-
-	// 显示回复
-	fmt.Printf("🎓 助教：\n%s\n", aiResponse)
 
 	// 继续对话循环
 	state.ShouldContinue = true
@@ -307,15 +395,20 @@ func (t *TutorAgent) Run() error {
 	}
 
 	// 执行工作流
-	finalState, err := t.graph.Invoke(ctx, initialState)
+	// ⚠️⚠️⚠️ 【修改4】删除 finalState 变量，不再需要在这里显示退出消息 ⚠️⚠️⚠️
+	// 原代码：finalState, err := t.graph.Invoke(ctx, initialState)
+	// 修改为：
+	_, err := t.graph.Invoke(ctx, initialState)
 	if err != nil {
 		return fmt.Errorf("执行失败: %v", err)
 	}
 
-	// 结束提示
-	if finalState.Stage != "init" {
-		fmt.Println("\n👋 感谢使用智能助教系统！祝学习愉快！")
-	}
+	// ⚠️⚠️⚠️ 【修改5】删除这里的退出消息，已经在 chat() 函数中显示 ⚠️⚠️⚠️
+	// 原代码：
+	// if finalState.Stage != "init" {
+	// 	fmt.Println("\n👋 感谢使用智能助教系统！祝学习愉快！")
+	// }
+	// 删除上述代码
 
 	return nil
 }
