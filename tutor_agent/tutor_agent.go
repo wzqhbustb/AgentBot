@@ -14,6 +14,8 @@ import (
 	"github.com/tmc/langchaingo/llms/openai"
 )
 
+// For test: /Users/wangyang/gitclonefiles/datafusion/README.md
+
 type LLMType int
 
 const (
@@ -274,7 +276,7 @@ func (t *TutorAgent) analyzeDocuments(ctx context.Context, state TutorState) (Tu
 	fmt.Println("\n" + strings.Repeat("=", 60))
 	fmt.Printf("🎓 助教分析：\n\n%s\n", state.DocumentSummary)
 	fmt.Println(strings.Repeat("=", 60))
-	fmt.Println("\n💡 提示：输入 'quit' 或 'exit' 可以退出，直接回车也会退出")
+	fmt.Println("\n💡 提示：输入 'quit' 或 'exit' 可以退出")
 
 	state.Stage = "analysis_complete"
 	state.ShouldContinue = true
@@ -294,9 +296,16 @@ func (t *TutorAgent) chat(ctx context.Context, state TutorState) (TutorState, er
 	state.UserInput = userInput
 
 	// 检查退出命令
-	if userInput == "quit" || userInput == "exit" || userInput == "" {
+	if userInput == "quit" || userInput == "exit" {
 		state.ShouldContinue = false
 		fmt.Println("\n👋 感谢使用智能助教系统！祝学习愉快！")
+		return state, nil
+	}
+
+	// 如果用户直接回车（空输入），提示重新输入
+	if userInput == "" {
+		fmt.Println("⚠️  请输入您的问题，或输入 'quit'/'exit' 退出")
+		state.ShouldContinue = true
 		return state, nil
 	}
 
