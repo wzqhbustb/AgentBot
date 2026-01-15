@@ -1,6 +1,25 @@
 package tutor_agent
 
-import "github.com/tmc/langchaingo/llms"
+import (
+	"bufio"
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/smallnest/langgraphgo/graph"
+	"github.com/tmc/langchaingo/llms"
+	"github.com/tmc/langchaingo/llms/openai"
+)
+
+type LLMType int
+
+const (
+	OpenAI LLMType = iota
+	Ollama
+)
 
 // Tutor agent state definition
 type TutorState struct {
@@ -16,4 +35,300 @@ type TutorState struct {
 	ShouldContinue bool
 	// Current teaching stage
 	Stage string
+}
+
+type TutorAgent struct {
+	model   llms.Model
+	graph   *graph.StateRunnable[TutorState]
+	scanner *bufio.Scanner
+}
+
+func NewTutorAgent(llmType LLMType) (*TutorAgent, error) {
+	switch llmType {
+	case OpenAI:
+		return nil, errors.New("unsupported LLM type: OpenAI")
+	case Ollama:
+		return newOllamaTutorAgent()
+	default:
+		return nil, errors.New(fmt.Sprintf("unrecognized LLM type: %d", llmType))
+	}
+}
+
+func newOllamaTutorAgent() (*TutorAgent, error) {
+	// Config Ollama
+	model, err := openai.New(
+		openai.WithBaseURL("http://localhost:11434/v1"),
+		openai.WithModel("deepseek-r1:14b"),
+		openai.WithToken("ollama"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create LLM failed: %v", err)
+	}
+
+	agent := &TutorAgent{
+		model:   model,
+		scanner: bufio.NewScanner(os.Stdin),
+	}
+
+	if err := agent.buildGraph(); err != nil {
+		return nil, err
+	}
+
+	return agent, nil
+}
+
+func (t *TutorAgent) buildGraph() error {
+	g := graph.NewStateGraph[TutorState]()
+
+	// 1. Load documents node
+	g.AddNode("load_documents", "load documents", t.loadDocuments)
+
+	// 2. Analyze documents node
+	g.AddNode("analyze_documents", "analyze documents", t.analyzeDocuments)
+
+	// 3. Chat node
+	g.AddNode("chat", "chat", t.chat)
+
+	// 4. Check continue node
+	g.AddNode("check_continue", "check continue", t.checkContinue)
+
+	// Set edges
+	g.AddEdge("load_documents", "analyze_documents")
+	g.AddEdge("analyze_documents", "chat")
+	g.AddEdge("chat", "check_continue")
+
+	// Conditional edge: decide the flow based on whether the user wants to continue
+	g.AddConditionalEdge("check_continue", func(ctx context.Context, state TutorState) string {
+		if state.ShouldContinue {
+			return "chat" // continue chatting
+		}
+		return graph.END // end the session
+	})
+
+	// Set entry point
+	g.SetEntryPoint("load_documents")
+
+	// Compile the graph
+	runnable, err := g.Compile()
+	if err != nil {
+		return err
+	}
+
+	t.graph = runnable
+	return nil
+}
+
+func (t *TutorAgent) loadDocuments(ctx context.Context, state TutorState) (TutorState, error) {
+	fmt.Println("\n📚 === 智能助教系统 ===")
+	fmt.Println("我可以帮助你深入学习和理解文档内容！")
+	fmt.Println()
+
+	// 获取文件路径
+	fmt.Print("请输入要学习的文档路径（多个文件用逗号分隔）: ")
+	if !t.scanner.Scan() {
+		return state, fmt.Errorf("读取输入失败")
+	}
+
+	pathsInput := strings.TrimSpace(t.scanner.Text())
+	if pathsInput == "" {
+		return state, fmt.Errorf("未提供文档路径")
+	}
+
+	// 解析路径
+	paths := strings.Split(pathsInput, ",")
+	state.DocumentContents = make(map[string]string)
+
+	// 加载每个文件
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		content, err := t.loadFile(path)
+		if err != nil {
+			fmt.Printf("⚠️  加载文件 %s 失败: %v\n", path, err)
+			continue
+		}
+		state.DocumentContents[path] = content
+		fmt.Printf("✅ 已加载: %s (%d 字符)\n", filepath.Base(path), len(content))
+	}
+
+	if len(state.DocumentContents) == 0 {
+		return state, fmt.Errorf("没有成功加载任何文档")
+	}
+
+	state.Stage = "documents_loaded"
+	return state, nil
+}
+
+// loadFile 加载单个文件
+func (t *TutorAgent) loadFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// analyzeDocuments 使用 AI 分析文档内容
+func (t *TutorAgent) analyzeDocuments(ctx context.Context, state TutorState) (TutorState, error) {
+	fmt.Println("\n🔍 正在分析文档内容...")
+
+	// 构建文档内容摘要
+	var docsBuilder strings.Builder
+	docsBuilder.WriteString("以下是需要学习的文档内容：\n\n")
+
+	for path, content := range state.DocumentContents {
+		docsBuilder.WriteString(fmt.Sprintf("=== 文件: %s ===\n", filepath.Base(path)))
+		// 如果文档太长，截取前面部分
+		if len(content) > 8000 {
+			docsBuilder.WriteString(content[:8000])
+			docsBuilder.WriteString("\n\n[文档内容过长，已截取前 8000 字符]\n\n")
+		} else {
+			docsBuilder.WriteString(content)
+			docsBuilder.WriteString("\n\n")
+		}
+	}
+
+	// 让 AI 分析文档
+	analysisPrompt := docsBuilder.String() + `
+
+请作为一位专业的助教，完成以下任务：
+1. 简要概述这些文档的主要内容和核心概念
+2. 列出文档中的重点知识点
+3. 说明你将如何帮助学习者理解这些内容
+
+请用友好、易懂的语言回复。`
+
+	messages := []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeHuman, analysisPrompt),
+	}
+
+	response, err := t.model.GenerateContent(ctx, messages,
+		llms.WithTemperature(0.7),
+		llms.WithMaxTokens(2000),
+	)
+	if err != nil {
+		return state, fmt.Errorf("分析文档失败: %v", err)
+	}
+
+	state.DocumentSummary = response.Choices[0].Content
+
+	// 初始化对话历史，包含文档内容和概述
+	state.Messages = []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeSystem,
+			fmt.Sprintf(`你是一位专业的助教，帮助学习者深入理解以下文档内容。
+
+%s
+
+你的任务是：
+1. 回答学习者关于文档内容的问题
+2. 提供深入的解释和示例
+3. 引导学习者思考和探索
+4. 用清晰、友好的语言交流
+
+请基于文档内容回答问题，如果需要举例说明，可以从文档中提取相关内容。`, docsBuilder.String())),
+		llms.TextParts(llms.ChatMessageTypeAI, state.DocumentSummary),
+	}
+
+	fmt.Println("\n" + strings.Repeat("=", 60))
+	fmt.Printf("🎓 助教分析：\n\n%s\n", state.DocumentSummary)
+	fmt.Println(strings.Repeat("=", 60))
+
+	state.Stage = "analysis_complete"
+	state.ShouldContinue = true
+	return state, nil
+}
+
+// chat 对话交互
+func (t *TutorAgent) chat(ctx context.Context, state TutorState) (TutorState, error) {
+	// 获取用户输入
+	fmt.Print("\n💬 你的问题: ")
+	if !t.scanner.Scan() {
+		return state, fmt.Errorf("读取输入失败")
+	}
+
+	userInput := strings.TrimSpace(t.scanner.Text())
+	state.UserInput = userInput
+
+	// 检查退出命令
+	if userInput == "quit" || userInput == "exit" || userInput == "" {
+		state.ShouldContinue = false
+		return state, nil
+	}
+
+	// 添加用户消息
+	state.Messages = append(state.Messages,
+		llms.TextParts(llms.ChatMessageTypeHuman, userInput))
+
+	// 调用 AI 生成回复
+	fmt.Print("🤖 助教思考中...")
+
+	response, err := t.model.GenerateContent(ctx, state.Messages,
+		llms.WithTemperature(0.7),
+		llms.WithMaxTokens(3000),
+	)
+	if err != nil {
+		return state, fmt.Errorf("生成回复失败: %v", err)
+	}
+
+	fmt.Print("\r" + strings.Repeat(" ", 30) + "\r") // 清除"思考中"提示
+
+	aiResponse := response.Choices[0].Content
+
+	// 添加 AI 回复到历史
+	state.Messages = append(state.Messages,
+		llms.TextParts(llms.ChatMessageTypeAI, aiResponse))
+
+	// 显示回复
+	fmt.Printf("🎓 助教：\n%s\n", aiResponse)
+
+	state.Stage = "chat_complete"
+	return state, nil
+}
+
+// checkContinue 检查是否继续对话
+func (t *TutorAgent) checkContinue(ctx context.Context, state TutorState) (TutorState, error) {
+	// 如果上一步已经决定退出，直接返回
+	if !state.ShouldContinue {
+		return state, nil
+	}
+
+	fmt.Print("\n继续提问？(回车继续, 输入 'quit' 退出): ")
+	if !t.scanner.Scan() {
+		state.ShouldContinue = false
+		return state, nil
+	}
+
+	input := strings.TrimSpace(t.scanner.Text())
+	if input == "quit" || input == "exit" {
+		state.ShouldContinue = false
+	} else {
+		state.ShouldContinue = true
+	}
+
+	return state, nil
+}
+
+// Run 运行助教系统
+func (t *TutorAgent) Run() error {
+	ctx := context.Background()
+
+	// 初始化状态
+	initialState := TutorState{
+		DocumentContents: make(map[string]string),
+		Messages:         []llms.MessageContent{},
+		ShouldContinue:   true,
+		Stage:            "init",
+	}
+
+	// 执行工作流
+	finalState, err := t.graph.Invoke(ctx, initialState)
+	if err != nil {
+		return fmt.Errorf("执行失败: %v", err)
+	}
+
+	// 结束提示
+	if finalState.Stage != "init" {
+		fmt.Println("\n👋 感谢使用智能助教系统！祝学习愉快！")
+	}
+
+	return nil
 }

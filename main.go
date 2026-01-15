@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"ollama-demo/page_rank"
+	"ollama-demo/tutor_agent"
 	"os"
 	"strings"
 
@@ -28,7 +28,24 @@ type AgentState struct {
 
 func main() {
 	// demo1()
-	page_rank.Verify()
+	// page_rank.Verify()
+	runTutorAgent()
+}
+
+// 在 main.go 文件末尾添加
+
+// runTutorAgent 运行智能助教
+func runTutorAgent() {
+	agent, err := tutor_agent.NewTutorAgent(tutor_agent.Ollama)
+	if err != nil {
+		fmt.Printf("❌ 初始化失败: %v\n", err)
+		fmt.Println("请确保 Ollama 正在运行: ollama serve")
+		return
+	}
+
+	if err := agent.Run(); err != nil {
+		fmt.Printf("❌ 运行错误: %v\n", err)
+	}
 }
 
 func demo() {
