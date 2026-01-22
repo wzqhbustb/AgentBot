@@ -4,12 +4,10 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"log"
 	"ollama-demo/tutor_agent"
 	"os"
 	"strings"
 
-	"github.com/lancedb/lancedb-go/pkg/lancedb"
 	"github.com/smallnest/langgraphgo/graph"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/openai"
@@ -31,17 +29,8 @@ type AgentState struct {
 func main() {
 	// demo1()
 	// page_rank.Verify()
-	// runTutorAgent()
-	lanceDBTest()
-}
-
-func lanceDBTest() {
-	// 连接本地数据库（自动创建目录）
-	db, err := lancedb.Connect(context.Background(), "./my_lancedb", nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
+	runTutorAgent()
+	// lanceDBTest()
 }
 
 // 在 main.go 文件末尾添加

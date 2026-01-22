@@ -3,7 +3,6 @@ module ollama-demo
 go 1.25.0
 
 require (
-	github.com/lancedb/lancedb-go v0.1.2
 	github.com/smallnest/langgraphgo v0.8.4
 	github.com/tmc/langchaingo v0.1.14
 )
