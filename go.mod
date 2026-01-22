@@ -8,6 +8,8 @@ require (
 )
 
 require (
+	github.com/Masterminds/semver v1.5.0 // indirect
+	github.com/amikos-tech/chroma-go v0.1.4 // indirect
 	github.com/apache/arrow/go/v17 v17.0.0 // indirect
 	github.com/dlclark/regexp2 v1.10.0 // indirect
 	github.com/goccy/go-json v0.10.3 // indirect
@@ -15,6 +17,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
+	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
 	github.com/pkoukk/tiktoken-go v0.1.6 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect

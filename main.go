@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"ollama-demo/chroma_run"
 	"ollama-demo/tutor_agent"
 	"os"
 	"strings"
@@ -29,8 +30,9 @@ type AgentState struct {
 func main() {
 	// demo1()
 	// page_rank.Verify()
-	runTutorAgent()
+	// runTutorAgent()
 	// lanceDBTest()
+	chroma_run.TestChromaConnection()
 }
 
 // 在 main.go 文件末尾添加
