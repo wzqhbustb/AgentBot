@@ -1,5 +1,10 @@
 package hnsw
 
+import (
+	"math/rand/v2"
+	"sync"
+)
+
 // The main structure of the HNSW index.
 type HNSWIndex struct {
 	// Core params
@@ -15,7 +20,13 @@ type HNSWIndex struct {
 	entryPoint int32   // Entry point node ID.
 	maxLevel   int     // Maximum level in the HNSW hierarchy.
 
-	// todo
+	distFunc DistanceFunc // Distance function used for measuring similarity.
+
+	globalLock sync.RWMutex   // Protects the entire index during insertions.
+	nodeLocks  []sync.RWMutex // Locks for individual nodes.
+
+	rng *rand.Rand // Random number generator for level assignment.
+	mu  sync.Mutex // Protects the RNG.
 }
 
 // todo
