@@ -1,6 +1,9 @@
 package hnsw
 
-import "container/heap"
+import (
+	"container/heap"
+	"sort"
+)
 
 // 优先队列实现（最小堆）
 type PriorityQueue []*Item
@@ -104,8 +107,8 @@ func (h *HNSWIndex) search(query []float32, k int, ef int, ep int, topLevel int)
 func (h *HNSWIndex) searchLayer(query []float32, ep int, ef int, level int) []SearchResult {
 	visited := make(map[int]bool)
 
-	// 候选集，最大堆，按距离从大到小
-	candidates := &MaxHeap{}
+	// 候选集，最小堆，按距离从小到大
+	candidates := &PriorityQueue{}
 	heap.Init(candidates)
 
 	// 结果集，最大堆，按距离从大到小
@@ -123,8 +126,8 @@ func (h *HNSWIndex) searchLayer(query []float32, ep int, ef int, level int) []Se
 		// 取距离最近的候选点
 		current := heap.Pop(candidates).(*Item)
 
-		// 如果当前点比结果集中最远的点还远，停止搜索
-		if results.Len() > 0 {
+		// 优化：只在结果集满时检查
+		if results.Len() >= ef {
 			furthest := results.Peek().(*Item)
 			if current.priority > furthest.priority {
 				break
@@ -156,11 +159,7 @@ func (h *HNSWIndex) searchLayer(query []float32, ep int, ef int, level int) []Se
 				if dist < furthest.priority {
 					heap.Push(candidates, &Item{value: neighborID, priority: dist})
 					heap.Push(results, &Item{value: neighborID, priority: dist})
-
-					// 移除最远的点
-					if results.Len() > ef {
-						heap.Pop(results)
-					}
+					heap.Pop(results)
 				}
 			}
 		}
@@ -177,4 +176,71 @@ func (h *HNSWIndex) searchLayer(query []float32, ep int, ef int, level int) []Se
 	}
 
 	return resultArray
+}
+
+func (h *HNSWIndex) selectNeighborsHeuristic(query []float32, candidates []SearchResult, m int) []SearchResult {
+	if len(candidates) <= m {
+		return candidates
+	}
+
+	result := make([]SearchResult, 0, m)
+	working := make([]SearchResult, len(candidates))
+	copy(working, candidates)
+
+	sort.Slice(working, func(i, j int) bool {
+		return working[i].Distance < working[j].Distance
+	})
+
+	for _, candidate := range working {
+		if len(result) >= m {
+			break
+		}
+
+		good := true
+		candidateVec := h.nodes[candidate.ID].Vector()
+
+		// 明确注释启发式逻辑
+		// 拒绝条件：如果候选点更接近已选邻居，而非 query
+		// 目的：保证邻居的多样性和覆盖范围
+		for _, selected := range result {
+			selectedVec := h.nodes[selected.ID].Vector()
+			distToSelected := h.distFunc(candidateVec, selectedVec)
+
+			// candidate.Distance 是候选点到 query 的距离
+			if distToSelected < candidate.Distance {
+				good = false
+				break
+			}
+		}
+
+		if good {
+			result = append(result, candidate)
+		}
+	}
+
+	// 补充逻辑保持不变
+	if len(result) < m {
+		selected := make(map[int]bool, len(result))
+		for _, r := range result {
+			selected[r.ID] = true
+		}
+
+		for _, candidate := range working {
+			if len(result) >= m {
+				break
+			}
+			if !selected[candidate.ID] {
+				result = append(result, candidate)
+			}
+		}
+	}
+
+	return result
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
