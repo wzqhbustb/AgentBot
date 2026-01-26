@@ -85,11 +85,45 @@ func (h *HNSWIndex) Add(vector []float32) (int, error) {
 	// Create the new node
 	h.globalLock.Lock()
 	nodeID := len(h.nodes)
+	newNode := NewNode(nodeID, vector, level)
+	h.nodes = append(h.nodes, newNode)
+	h.nodeLocks = append(h.nodeLocks, sync.RWMutex{})
+	h.globalLock.Unlock()
 
-	// todo
+	if nodeID == 0 {
+		h.globalLock.Lock()
+		h.entryPoint = int32(nodeID)
+		h.maxLevel = level
+		h.globalLock.Unlock()
+		return nodeID, nil
+	}
+
+	h.insert(node)
+
+	return nodeID, nil
 }
 
-// todo func Search
+func (h *HNSWIndex) Search(query []float32, k int, ef int) ([]SearchResult, error) {
+	if len(query) != h.dimension {
+		return nil, ErrDimensionMismatch
+	}
+
+	if ef == 0 {
+		ef = max(h.efConstruction, k)
+	}
+
+	h.globalLock.RLock()
+	if h.entryPoint == -1 {
+		h.globalLock.RUnlock()
+		return nil, ErrEmptyIndex
+	}
+	ep := h.entryPoint
+	maxLvl := h.maxLevel
+	h.globalLock.RUnlock()
+
+	return h.search(query, k, ef, int(ep), int(maxLvl))
+
+}
 
 // Len returns the number of nodes in the HNSW index.
 func (h *HNSWIndex) Len() int {
