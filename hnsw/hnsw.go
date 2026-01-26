@@ -44,6 +44,9 @@ func NewHNSW(config Config) *HNSWIndex {
 	if config.M <= 0 {
 		config.M = 16
 	}
+	if config.Dimension <= 0 {
+		panic("dimension must be positive")
+	}
 	if config.EfConstruction <= 0 {
 		config.EfConstruction = 200
 	}
@@ -139,7 +142,14 @@ func (h *HNSWIndex) randomLevel() int {
 	// Generate a uniform random number in (0,1)
 	uniform := h.rng.Float64()
 	// Calculate the level using the negative logarithm
-	// todo Explain why we use -ln(uniform) * ml
+
+	// 使用指数分布生成层级，模拟 skip list 的概率层级
+	// 公式: level = floor(-ln(U) * ml), 其中 U ~ Uniform(0,1), ml = 1/ln(M)
+	// 保证 P(level >= L) = (1/M)^L，即高层节点呈指数衰减
+	// 例如 M=16 时：
+	//   - 约 93.75% 节点在第 0 层
+	//   - 约 6.25% 节点在第 1 层
+	//   - 约 0.39% 节点在第 2 层
 	level := int(math.Floor(-math.Log(uniform) * h.ml))
 	return level
 }

@@ -13,7 +13,12 @@ func (h *HNSWIndex) insert(newNode *Node) {
 	// 阶段1：从顶层到 newNodeLevel+1，使用贪心搜索找到入口点
 	currentNearest := ep
 	for lc := maxLvl; lc > newNodeLevel; lc-- {
-		currentNearest = h.searchLayer(newNode.Vector(), currentNearest, 1, lc)[0].ID
+		nearest := h.searchLayer(newNode.Vector(), currentNearest, 1, lc)
+		if len(nearest) == 0 {
+			// 理论上不会发生，但添加保护
+			break
+		}
+		currentNearest = nearest[0].ID
 	}
 
 	// 阶段2：从 newNodeLevel 到第 0 层，建立连接
