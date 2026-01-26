@@ -79,6 +79,28 @@ func (h *MaxHeap) Peek() interface{} {
 	return (*h)[0]
 }
 
+// search 在索引中搜索 k 个最近邻
+func (h *HNSWIndex) search(query []float32, k int, ef int, ep int, topLevel int) ([]SearchResult, error) {
+	// 阶段1：从顶层到第1层，使用贪心搜索
+	currentNearest := ep
+	for lc := topLevel; lc > 0; lc-- {
+		nearest := h.searchLayer(query, currentNearest, 1, lc)
+		if len(nearest) > 0 {
+			currentNearest = nearest[0].ID
+		}
+	}
+
+	// 阶段2：在第0层使用 ef 进行搜索
+	candidates := h.searchLayer(query, currentNearest, ef, 0)
+
+	// 返回前 k 个结果
+	if len(candidates) > k {
+		return candidates[:k], nil
+	}
+
+	return candidates, nil
+}
+
 func (h *HNSWIndex) searchLayer(query []float32, ep int, ef int, level int) []SearchResult {
 	visited := make(map[int]bool)
 

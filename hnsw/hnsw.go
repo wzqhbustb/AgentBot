@@ -98,7 +98,7 @@ func (h *HNSWIndex) Add(vector []float32) (int, error) {
 		return nodeID, nil
 	}
 
-	h.insert(node)
+	h.insert(newNode)
 
 	return nodeID, nil
 }
