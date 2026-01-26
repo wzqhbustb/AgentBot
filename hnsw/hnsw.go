@@ -20,7 +20,7 @@ type HNSWIndex struct {
 
 	nodes      []*Node // All nodes in the HNSW graph.
 	entryPoint int32   // Entry point node ID.
-	maxLevel   int     // Maximum level in the HNSW hierarchy.
+	maxLevel   int32   // Maximum level in the HNSW hierarchy.
 
 	distFunc DistanceFunc // Distance function used for measuring similarity.
 
@@ -93,7 +93,7 @@ func (h *HNSWIndex) Add(vector []float32) (int, error) {
 	if nodeID == 0 {
 		h.globalLock.Lock()
 		h.entryPoint = int32(nodeID)
-		h.maxLevel = level
+		h.maxLevel = int32(level)
 		h.globalLock.Unlock()
 		return nodeID, nil
 	}
