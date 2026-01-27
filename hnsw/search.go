@@ -135,13 +135,9 @@ func (h *HNSWIndex) searchLayer(query []float32, ep int, ef int, level int) []Se
 		}
 
 		// 检查当前节点的所有邻居
-		h.nodeLocks[current.value].RLock()
 		neighbors := h.nodes[current.value].GetConnections(level)
-		neighborsCopy := make([]int, len(neighbors))
-		copy(neighborsCopy, neighbors)
-		h.nodeLocks[current.value].RUnlock()
 
-		for _, neighborID := range neighborsCopy {
+		for _, neighborID := range neighbors {
 			if visited[neighborID] {
 				continue
 			}
