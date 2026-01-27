@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/smallnest/langgraphgo/graph"
 	"github.com/tmc/langchaingo/embeddings"
@@ -298,8 +299,19 @@ func (t *TutorAgent) vectorizeDocuments(ctx context.Context, state TutorState) (
 
 		// 向量化每个块
 		for i, chunkText := range chunks {
-			// 生成 embedding
-			vector, err := state.Embedder.EmbedQuery(ctx, chunkText)
+			var vector []float32
+			var err error
+
+			for retry := 0; retry < 3; retry++ {
+				// 生成 embedding
+				vector, err = state.Embedder.EmbedQuery(ctx, chunkText)
+				if err == nil {
+					break
+				}
+				if retry < 2 {
+					time.Sleep(time.Duration(100*(retry+1)) * time.Millisecond)
+				}
+			}
 			if err != nil {
 				fmt.Printf("⚠️  块 %d 向量化失败: %v\n", i, err)
 				continue
