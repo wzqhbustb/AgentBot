@@ -31,10 +31,10 @@ type AgentState struct {
 func main() {
 	// demo1()
 	// page_rank.Verify()
-	// runTutorAgent()
+	runTutorAgent()
 	// lanceDBTest()
 	// chroma_run.TestChromaConnection()
-	runHNSWDemo()
+	// runHNSWDemo()
 }
 
 // 在 main.go 文件末尾添加
