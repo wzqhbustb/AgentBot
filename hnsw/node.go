@@ -31,7 +31,9 @@ func (n *Node) ID() int {
 }
 
 func (n *Node) Vector() []float32 {
-	return n.vector
+	result := make([]float32, len(n.vector))
+	copy(result, n.vector)
+	return result
 }
 
 func (n *Node) Level() int {

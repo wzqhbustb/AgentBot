@@ -80,13 +80,16 @@ func (h *HNSWIndex) Add(vector []float32) (int, error) {
 		return -1, ErrDimensionMismatch
 	}
 
+	vectorCopy := make([]float32, len(vector))
+	copy(vectorCopy, vector)
+
 	// Generate a random level for the new node
 	level := h.randomLevel()
 
 	// Create the new node
 	h.globalLock.Lock()
 	nodeID := len(h.nodes)
-	newNode := NewNode(nodeID, vector, level)
+	newNode := NewNode(nodeID, vectorCopy, level)
 	h.nodes = append(h.nodes, newNode)
 	h.globalLock.Unlock()
 
@@ -148,6 +151,11 @@ func (h *HNSWIndex) randomLevel() int {
 	//   - 约 6.25% 节点在第 1 层
 	//   - 约 0.39% 节点在第 2 层
 	level := int(math.Floor(-math.Log(uniform) * h.ml))
+
+	maxLevel := 16 // 足够大，实际很少超过 10 层
+	if level > maxLevel {
+		level = maxLevel
+	}
 	return level
 }
 

@@ -134,6 +134,10 @@ func (h *HNSWIndex) searchLayer(query []float32, ep int, ef int, level int) []Se
 			}
 		}
 
+		if current.value < 0 || current.value >= len(h.nodes) {
+			continue // 跳过无效节点
+		}
+
 		// 检查当前节点的所有邻居
 		neighbors := h.nodes[current.value].GetConnections(level)
 
@@ -141,6 +145,11 @@ func (h *HNSWIndex) searchLayer(query []float32, ep int, ef int, level int) []Se
 			if visited[neighborID] {
 				continue
 			}
+
+			if neighborID < 0 || neighborID >= len(h.nodes) {
+				continue // 跳过无效邻居
+			}
+
 			visited[neighborID] = true
 
 			// 计算距离
