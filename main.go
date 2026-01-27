@@ -4,7 +4,8 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"ollama-demo/chroma_run"
+	"math/rand/v2"
+	"ollama-demo/hnsw"
 	"ollama-demo/tutor_agent"
 	"os"
 	"strings"
@@ -32,7 +33,8 @@ func main() {
 	// page_rank.Verify()
 	// runTutorAgent()
 	// lanceDBTest()
-	chroma_run.TestChromaConnection()
+	// chroma_run.TestChromaConnection()
+	runHNSWDemo()
 }
 
 // 在 main.go 文件末尾添加
@@ -188,4 +190,92 @@ func schemaDemo() {
 			return current, nil
 		},
 	)
+}
+
+// runHNSWDemo 演示 HNSW 向量搜索
+func runHNSWDemo() {
+	fmt.Println("=== HNSW 向量搜索演示 ===\n")
+
+	// 1. 创建 HNSW 索引
+	dimension := 128
+	index := hnsw.NewHNSW(hnsw.Config{
+		M:              16,
+		EfConstruction: 200,
+		Dimension:      dimension,
+		DistanceFunc:   hnsw.L2Distance, // 可选: L2Distance, InnerProductDistance, CosineDistance
+	})
+	fmt.Printf("✓ 创建索引 (M=%d, efConstruction=%d, dimension=%d)\n\n", 16, 200, dimension)
+
+	// 2. 准备测试数据
+	numVectors := 1000
+	fmt.Printf("⏳ 插入 %d 个向量...\n", numVectors)
+
+	vectors := make([][]float32, numVectors)
+	for i := 0; i < numVectors; i++ {
+		vec := make([]float32, dimension)
+		for j := 0; j < dimension; j++ {
+			vec[j] = rand.Float32()*2 - 1 // [-1, 1) 随机值
+		}
+		vectors[i] = vec
+
+		// 插入向量
+		nodeID, err := index.Add(vec)
+		if err != nil {
+			fmt.Printf("❌ 插入失败: %v\n", err)
+			return
+		}
+
+		if (i+1)%100 == 0 {
+			fmt.Printf("  已插入 %d 个向量 (最新 nodeID=%d)\n", i+1, nodeID)
+		}
+	}
+	fmt.Printf("✓ 插入完成！\n\n")
+
+	// 3. 执行搜索
+	fmt.Println("🔍 执行向量搜索...")
+
+	// 使用第一个向量作为查询
+	queryVector := vectors[0]
+	k := 10  // 返回 top-10 结果
+	ef := 50 // 搜索时的候选集大小
+
+	results, err := index.Search(queryVector, k, ef)
+	if err != nil {
+		fmt.Printf("❌ 搜索失败: %v\n", err)
+		return
+	}
+
+	fmt.Printf("\n查询向量: vectors[0]\n")
+	fmt.Printf("返回 Top-%d 最近邻:\n\n", k)
+
+	for i, item := range results {
+		fmt.Printf("%2d. NodeID=%4d | 距离=%.6f\n", i+1, item.ID, item.Distance)
+	}
+
+	// 4. 测试不同的查询向量
+	fmt.Println("\n🔍 随机查询测试...")
+	randomQuery := make([]float32, dimension)
+	for j := 0; j < dimension; j++ {
+		randomQuery[j] = rand.Float32()*2 - 1
+	}
+
+	results, err = index.Search(randomQuery, 5, 100)
+	if err != nil {
+		fmt.Printf("❌ 搜索失败: %v\n", err)
+		return
+	}
+
+	fmt.Printf("\n随机查询向量\n")
+	fmt.Printf("返回 Top-5 最近邻:\n\n")
+
+	for i, item := range results {
+		fmt.Printf("%2d. NodeID=%4d | 距离=%.6f\n", i+1, item.ID, item.Distance)
+	}
+
+	// 5. 性能统计
+	fmt.Println("\n📊 性能统计:")
+	fmt.Printf("  索引大小: %d 个向量\n", numVectors)
+	fmt.Printf("  向量维度: %d\n", dimension)
+	fmt.Printf("  搜索返回: %d 个最近邻\n", k)
+	fmt.Println("\n✅ 演示完成！")
 }
