@@ -24,8 +24,7 @@ type HNSWIndex struct {
 
 	distFunc DistanceFunc // Distance function used for measuring similarity.
 
-	globalLock sync.RWMutex   // Protects the entire index during insertions.
-	nodeLocks  []sync.RWMutex // Locks for individual nodes.
+	globalLock sync.RWMutex // Protects the entire index during insertions.
 
 	rng *rand.Rand // Random number generator for level assignment.
 	mu  sync.Mutex // Protects the RNG.
@@ -67,11 +66,10 @@ func NewHNSW(config Config) *HNSWIndex {
 		efConstruction: config.EfConstruction,
 		ml:             ml,
 		dimension:      config.Dimension,
-		nodes:          make([]*Node, 0),
+		nodes:          make([]*Node, 0, 10000),
 		entryPoint:     -1, // -1 表示还没有节点
 		maxLevel:       -1,
 		distFunc:       config.DistanceFunc,
-		nodeLocks:      make([]sync.RWMutex, 0),
 		rng:            rand.New(rand.NewSource(config.Seed)),
 	}
 }
@@ -90,7 +88,6 @@ func (h *HNSWIndex) Add(vector []float32) (int, error) {
 	nodeID := len(h.nodes)
 	newNode := NewNode(nodeID, vector, level)
 	h.nodes = append(h.nodes, newNode)
-	h.nodeLocks = append(h.nodeLocks, sync.RWMutex{})
 	h.globalLock.Unlock()
 
 	if nodeID == 0 {

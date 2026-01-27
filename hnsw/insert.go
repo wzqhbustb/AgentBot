@@ -39,8 +39,7 @@ func (h *HNSWIndex) insert(newNode *Node) {
 			// 新节点 -> 邻居
 			newNode.AddConnection(lc, neighbor.ID)
 
-			// 邻居 -> 新节点（需要加锁）
-			h.nodeLocks[neighbor.ID].Lock()
+			// 邻居 -> 新节点
 			neighborNode := h.nodes[neighbor.ID]
 			neighborNode.AddConnection(lc, newNodeID)
 
@@ -67,8 +66,6 @@ func (h *HNSWIndex) insert(newNode *Node) {
 				}
 				neighborNode.SetConnections(lc, prunedIDs)
 			}
-
-			h.nodeLocks[neighbor.ID].Unlock()
 		}
 
 		// 更新下一层的入口点
