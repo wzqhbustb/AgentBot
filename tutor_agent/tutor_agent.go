@@ -19,6 +19,7 @@ import (
 )
 
 // For test: /Users/wangyang/gitclonefiles/datafusion/README.md
+// For test: /Users/wangyang/gitclonefiles/ClickHouse/src/core/Settings.cpp
 
 type LLMType int
 
@@ -170,9 +171,9 @@ func (t *TutorAgent) buildGraph() error {
 }
 
 func (t *TutorAgent) loadDocuments(ctx context.Context, state TutorState) (TutorState, error) {
-	fmt.Println("\n📚 === 智能助教系统（RAG 增强版）===") // ✨ 修改：标题加上 RAG 标识
+	fmt.Println("\n📚 === 智能助教系统（RAG 增强版）===")
 	fmt.Println("我可以帮助你深入学习和理解文档内容！")
-	fmt.Println("💡 使用向量搜索技术，精准检索相关内容") // ✨ 新增：提示 RAG 功能
+	fmt.Println("💡 使用向量搜索技术，精准检索相关内容")
 	fmt.Println()
 
 	// 获取文件路径
@@ -655,8 +656,6 @@ func (t *TutorAgent) chatWithRAG(ctx context.Context, state TutorState) (TutorSt
 	}
 
 	fmt.Println() // 回复结束后换行
-
-	// ✨✨✨ 新增：显示引用来源 ✨✨✨
 	if len(relevantChunks) > 0 {
 		fmt.Println("\n📚 引用来源:")
 		for i, chunk := range relevantChunks {
@@ -677,7 +676,6 @@ func (t *TutorAgent) chatWithRAG(ctx context.Context, state TutorState) (TutorSt
 	state.Messages = append(state.Messages,
 		llms.TextParts(llms.ChatMessageTypeAI, aiResponse))
 
-	// ✨✨✨ 新增：限制历史消息长度，避免过长 ✨✨✨
 	if len(state.Messages) > 21 { // 1 system + 1 initial AI + 20 messages (10 轮对话)
 		state.Messages = append(state.Messages[:2], state.Messages[len(state.Messages)-20:]...)
 	}
