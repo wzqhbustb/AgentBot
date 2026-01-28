@@ -48,6 +48,9 @@ func (b *Buffer) Resize(newSize int) {
 
 // Int32 returns an int32 view of the buffer
 func (b *Buffer) Int32() []int32 {
+	if len(b.buf) == 0 {
+		return nil
+	}
 	if len(b.buf)%4 != 0 {
 		panic(fmt.Sprintf("buffer size %d not aligned to int32", len(b.buf)))
 	}
@@ -56,6 +59,9 @@ func (b *Buffer) Int32() []int32 {
 
 // Int64 returns an int64 view of the buffer
 func (b *Buffer) Int64() []int64 {
+	if len(b.buf) == 0 {
+		return nil // ← 添加这行
+	}
 	if len(b.buf)%8 != 0 {
 		panic(fmt.Sprintf("buffer size %d not aligned to int64", len(b.buf)))
 	}
@@ -64,6 +70,9 @@ func (b *Buffer) Int64() []int64 {
 
 // Float32 returns a float32 view of the buffer
 func (b *Buffer) Float32() []float32 {
+	if len(b.buf) == 0 {
+		return nil // ← 添加这行
+	}
 	if len(b.buf)%4 != 0 {
 		panic(fmt.Sprintf("buffer size %d not aligned to float32", len(b.buf)))
 	}
@@ -72,6 +81,9 @@ func (b *Buffer) Float32() []float32 {
 
 // Float64 returns a float64 view of the buffer
 func (b *Buffer) Float64() []float64 {
+	if len(b.buf) == 0 {
+		return nil // ← 添加这行
+	}
 	if len(b.buf)%8 != 0 {
 		panic(fmt.Sprintf("buffer size %d not aligned to float64", len(b.buf)))
 	}

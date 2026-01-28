@@ -248,18 +248,19 @@ func (a *FixedSizeListArray) ListSize() int {
 }
 
 // ValueSlice returns the slice for list at index i (zero-copy)
-func (a *FixedSizeListArray) ValueSlice(i int) []float32 {
-	if i < 0 || i >= a.Len() {
-		panic("index out of range")
-	}
-
-	// Assuming underlying type is Float32Array
-	floatArr := a.values.(*Float32Array)
+func (a *FixedSizeListArray) ValueSlice(i int) interface{} {
 	size := a.ListSize()
 	start := i * size
 	end := start + size
 
-	return floatArr.Values()[start:end]
+	switch arr := a.values.(type) {
+	case *Float32Array:
+		return arr.Values()[start:end]
+	case *Int32Array:
+		return arr.Values()[start:end]
+	default:
+		panic("unsupported element type")
+	}
 }
 
 // --- ListArray (variable-length) ---

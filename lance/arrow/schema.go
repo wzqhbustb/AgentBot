@@ -24,8 +24,7 @@ func NewField(name string, dtype DataType, nullable bool) Field {
 }
 
 // WithMetadata adds metadata to the field
-// todo 这里的 Field 的方法为什么不是指针？
-func (f Field) WithMetadata(key, value string) Field {
+func (f *Field) WithMetadata(key, value string) *Field {
 	f.Metadata[key] = value
 	return f
 }

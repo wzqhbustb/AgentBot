@@ -259,3 +259,15 @@ func (b *Float64Builder) NewArray() Array {
 }
 
 func (b *Float64Builder) Release() {}
+
+func (r *RecordBatch) Int32Column(i int) *Int32Array {
+	return r.columns[i].(*Int32Array)
+}
+
+func (r *RecordBatch) Float32Column(i int) *Float32Array {
+	return r.columns[i].(*Float32Array)
+}
+
+func (r *RecordBatch) VectorColumn(i int) *FixedSizeListArray {
+	return r.columns[i].(*FixedSizeListArray)
+}
