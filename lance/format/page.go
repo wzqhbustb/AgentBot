@@ -125,25 +125,19 @@ func (p *Page) ReadFrom(r io.Reader) (int64, error) {
 		return int64(n), NewFileError("read page header", err)
 	}
 
-	reader := bytes.NewReader(headerBuf)
-	var typeByte, encodingByte byte
-	var header PageHeader
-
-	reader.ReadByte() // Type
-	typeByte, _ = reader.ReadByte()
+	// Parse header
 	p.Type = PageType(headerBuf[0])
-
-	reader.ReadByte() // Encoding
-	encodingByte, _ = reader.ReadByte()
 	p.Encoding = EncodingType(headerBuf[1])
 
-	reader = bytes.NewReader(headerBuf[2:])
+	reader := bytes.NewReader(headerBuf[2:])
 	binary.Read(reader, ByteOrder, &p.ColumnIndex)
 	binary.Read(reader, ByteOrder, &p.NumValues)
 	binary.Read(reader, ByteOrder, &p.UncompressedSize)
 	binary.Read(reader, ByteOrder, &p.CompressedSize)
 	binary.Read(reader, ByteOrder, &p.Checksum)
-	binary.Read(reader, ByteOrder, &header.Reserved)
+
+	var reserved [8]byte
+	binary.Read(reader, ByteOrder, &reserved)
 
 	// Read data
 	p.Data = make([]byte, p.CompressedSize)
