@@ -83,6 +83,20 @@ func (b *Bitmap) CountSet() int {
 	return count
 }
 
+func (b *Bitmap) Resize(newLength int) {
+	if newLength == b.length {
+		return
+	}
+
+	newNumBytes := (newLength + 7) / 8
+	if newNumBytes > len(b.buf) {
+		newBuf := make([]byte, newNumBytes)
+		copy(newBuf, b.buf)
+		b.buf = newBuf
+	}
+	b.length = newLength
+}
+
 // --- Helper: Create bitmap with all values set ---
 
 // NewBitmapAllSet creates a bitmap with all bits set to 1
