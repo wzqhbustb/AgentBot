@@ -1,0 +1,261 @@
+package arrow
+
+import "fmt"
+
+// RecordBatch represents a collection of equal-length arrays (a "table slice")
+// This is Arrow's fundamental unit for columnar data
+type RecordBatch struct {
+	schema  *Schema
+	numRows int
+	columns []Array
+}
+
+// NewRecordBatch creates a new record batch
+func NewRecordBatch(schema *Schema, numRows int, columns []Array) (*RecordBatch, error) {
+	if schema.NumFields() != len(columns) {
+		return nil, fmt.Errorf("schema has %d fields but got %d columns", schema.NumFields(), len(columns))
+	}
+
+	for i, col := range columns {
+		if col.Len() != numRows {
+			return nil, fmt.Errorf("column %d has %d rows, expected %d", i, col.Len(), numRows)
+		}
+
+		field := schema.Field(i)
+		if col.DataType().ID() != field.Type.ID() {
+			return nil, fmt.Errorf("column %d type mismatch: expected %s, got %s",
+				i, field.Type.Name(), col.DataType().Name())
+		}
+	}
+
+	return &RecordBatch{
+		schema:  schema,
+		numRows: numRows,
+		columns: columns,
+	}, nil
+}
+
+// Schema returns the schema
+func (r *RecordBatch) Schema() *Schema {
+	return r.schema
+}
+
+// NumRows returns the number of rows
+func (r *RecordBatch) NumRows() int {
+	return r.numRows
+}
+
+// NumCols returns the number of columns
+func (r *RecordBatch) NumCols() int {
+	return len(r.columns)
+}
+
+// Column returns the column at index i
+func (r *RecordBatch) Column(i int) Array {
+	return r.columns[i]
+}
+
+// ColumnByName returns the column with the given field name
+func (r *RecordBatch) ColumnByName(name string) (Array, bool) {
+	_, idx, ok := r.schema.FieldByName(name)
+	if !ok {
+		return nil, false
+	}
+	return r.columns[idx], true
+}
+
+// Columns returns all columns
+func (r *RecordBatch) Columns() []Array {
+	return r.columns
+}
+
+// Release releases all column arrays
+func (r *RecordBatch) Release() {
+	for _, col := range r.columns {
+		col.Release()
+	}
+}
+
+// String returns a human-readable representation
+func (r *RecordBatch) String() string {
+	return fmt.Sprintf("RecordBatch{schema: %s, rows: %d}", r.schema.String(), r.numRows)
+}
+
+// --- RecordBatchBuilder ---
+
+// RecordBatchBuilder helps build record batches incrementally
+type RecordBatchBuilder struct {
+	schema   *Schema
+	builders []Builder
+}
+
+// NewRecordBatchBuilder creates a new record batch builder
+func NewRecordBatchBuilder(schema *Schema) *RecordBatchBuilder {
+	builders := make([]Builder, schema.NumFields())
+
+	for i := 0; i < schema.NumFields(); i++ {
+		field := schema.Field(i)
+		builders[i] = NewBuilderForType(field.Type)
+	}
+
+	return &RecordBatchBuilder{
+		schema:   schema,
+		builders: builders,
+	}
+}
+
+// Field returns the builder for field at index i
+func (b *RecordBatchBuilder) Field(i int) Builder {
+	return b.builders[i]
+}
+
+// NewBatch creates a new record batch from the builders (resets builders)
+func (b *RecordBatchBuilder) NewBatch() (*RecordBatch, error) {
+	numRows := b.builders[0].Len()
+
+	// Verify all builders have the same length
+	for i, builder := range b.builders {
+		if builder.Len() != numRows {
+			return nil, fmt.Errorf("builder %d has %d rows, expected %d", i, builder.Len(), numRows)
+		}
+	}
+
+	// Build arrays
+	columns := make([]Array, len(b.builders))
+	for i, builder := range b.builders {
+		columns[i] = builder.NewArray()
+	}
+
+	return NewRecordBatch(b.schema, numRows, columns)
+}
+
+// Release releases all builders
+func (b *RecordBatchBuilder) Release() {
+	for _, builder := range b.builders {
+		builder.Release()
+	}
+}
+
+// --- Helper: Create builder for a type ---
+
+func NewBuilderForType(dtype DataType) Builder {
+	switch dtype.ID() {
+	case INT32:
+		return NewInt32Builder()
+	case INT64:
+		return &Int64Builder{data: make([]int64, 0, 16), nulls: NewBitmap(0)}
+	case FLOAT32:
+		return NewFloat32Builder()
+	case FLOAT64:
+		return &Float64Builder{data: make([]float64, 0, 16), nulls: NewBitmap(0)}
+	case FIXED_SIZE_LIST:
+		listType := dtype.(*FixedSizeListType)
+		return NewFixedSizeListBuilder(listType)
+	case LIST:
+		listType := dtype.(*ListType)
+		valueBuilder := NewBuilderForType(listType.Elem())
+		return NewListBuilder(listType, valueBuilder)
+	default:
+		panic(fmt.Sprintf("unsupported type: %s", dtype.Name()))
+	}
+}
+
+// --- Additional builders (Int64, Float64) ---
+
+type Int64Builder struct {
+	data     []int64
+	nulls    *Bitmap
+	hasNulls bool
+}
+
+func (b *Int64Builder) Reserve(n int) {
+	if cap(b.data)-len(b.data) < n {
+		newData := make([]int64, len(b.data), len(b.data)+n)
+		copy(newData, b.data)
+		b.data = newData
+	}
+}
+
+func (b *Int64Builder) Append(v int64) {
+	b.data = append(b.data, v)
+	if b.hasNulls {
+		b.nulls.Resize(len(b.data))
+		b.nulls.Set(len(b.data) - 1)
+	}
+}
+
+func (b *Int64Builder) AppendNull() {
+	if !b.hasNulls {
+		b.hasNulls = true
+		b.nulls = NewBitmap(len(b.data))
+		b.nulls.SetAll()
+	}
+	b.data = append(b.data, 0)
+	b.nulls.Resize(len(b.data))
+	b.nulls.Clear(len(b.data) - 1)
+}
+
+func (b *Int64Builder) Len() int { return len(b.data) }
+
+func (b *Int64Builder) NewArray() Array {
+	var nullBitmap *Bitmap
+	if b.hasNulls {
+		nullBitmap = b.nulls
+	}
+	arr := NewInt64Array(b.data, nullBitmap)
+	b.data = make([]int64, 0, 16)
+	b.nulls = NewBitmap(0)
+	b.hasNulls = false
+	return arr
+}
+
+func (b *Int64Builder) Release() {}
+
+type Float64Builder struct {
+	data     []float64
+	nulls    *Bitmap
+	hasNulls bool
+}
+
+func (b *Float64Builder) Reserve(n int) {
+	if cap(b.data)-len(b.data) < n {
+		newData := make([]float64, len(b.data), len(b.data)+n)
+		copy(newData, b.data)
+		b.data = newData
+	}
+}
+
+func (b *Float64Builder) Append(v float64) {
+	b.data = append(b.data, v)
+	if b.hasNulls {
+		b.nulls.Resize(len(b.data))
+		b.nulls.Set(len(b.data) - 1)
+	}
+}
+
+func (b *Float64Builder) AppendNull() {
+	if !b.hasNulls {
+		b.hasNulls = true
+		b.nulls = NewBitmap(len(b.data))
+		b.nulls.SetAll()
+	}
+	b.data = append(b.data, 0)
+	b.nulls.Resize(len(b.data))
+	b.nulls.Clear(len(b.data) - 1)
+}
+
+func (b *Float64Builder) Len() int { return len(b.data) }
+
+func (b *Float64Builder) NewArray() Array {
+	var nullBitmap *Bitmap
+	if b.hasNulls {
+		nullBitmap = b.nulls
+	}
+	arr := NewFloat64Array(b.data, nullBitmap)
+	b.data = make([]float64, 0, 16)
+	b.nulls = NewBitmap(0)
+	b.hasNulls = false
+	return arr
+}
+
+func (b *Float64Builder) Release() {}
