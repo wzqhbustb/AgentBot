@@ -71,7 +71,8 @@ func (r *PageReader) deserializeInt32Array(data []byte, numValues int) (*arrow.I
 			return nil, err
 		}
 
-		nullBitmap = arrow.NewBitmap(int(bitmapBytes * 8))
+		// Use actual numValues for bitmap size
+		nullBitmap = arrow.NewBitmap(numValues)
 		copy(nullBitmap.Bytes(), bitmapData)
 	}
 
@@ -112,7 +113,8 @@ func (r *PageReader) deserializeInt64Array(data []byte, numValues int) (*arrow.I
 			return nil, err
 		}
 
-		nullBitmap = arrow.NewBitmap(int(bitmapBytes * 8))
+		// Use actual numValues for bitmap size
+		nullBitmap = arrow.NewBitmap(numValues)
 		copy(nullBitmap.Bytes(), bitmapData)
 	}
 
@@ -152,7 +154,8 @@ func (r *PageReader) deserializeFloat32Array(data []byte, numValues int) (*arrow
 			return nil, err
 		}
 
-		nullBitmap = arrow.NewBitmap(int(bitmapBytes * 8))
+		// Use actual numValues for bitmap size
+		nullBitmap = arrow.NewBitmap(numValues)
 		copy(nullBitmap.Bytes(), bitmapData)
 	}
 
@@ -192,7 +195,8 @@ func (r *PageReader) deserializeFloat64Array(data []byte, numValues int) (*arrow
 			return nil, err
 		}
 
-		nullBitmap = arrow.NewBitmap(int(bitmapBytes * 8))
+		// Use actual numValues for bitmap size
+		nullBitmap = arrow.NewBitmap(numValues)
 		copy(nullBitmap.Bytes(), bitmapData)
 	}
 
@@ -244,7 +248,8 @@ func (r *PageReader) deserializeFixedSizeListArray(data []byte, listType *arrow.
 			return nil, err
 		}
 
-		nullBitmap = arrow.NewBitmap(int(bitmapBytes * 8))
+		// Use actual numValues (number of lists) for bitmap size
+		nullBitmap = arrow.NewBitmap(numValues)
 		copy(nullBitmap.Bytes(), bitmapData)
 	}
 
