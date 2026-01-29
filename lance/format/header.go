@@ -3,9 +3,12 @@ package format
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"ollama-demo/lance/arrow"
+	"strconv"
+	"strings"
 )
 
 // Header represents the Lance file header
@@ -161,8 +164,6 @@ func (h *Header) ReadFrom(r io.Reader) (int64, error) {
 
 // Helper functions for schema serialization (simplified for Phase 2)
 func serializeSchemaToJSON(schema *arrow.Schema) []byte {
-	// Simplified JSON serialization
-	// In production, use a proper serialization library
 	var buf bytes.Buffer
 	buf.WriteString("{\"fields\":[")
 
@@ -171,8 +172,11 @@ func serializeSchemaToJSON(schema *arrow.Schema) []byte {
 			buf.WriteString(",")
 		}
 		field := schema.Field(i)
+
+		// Serialize type name with full information
+		typeName := serializeTypeName(field.Type)
 		fmt.Fprintf(&buf, "{\"name\":\"%s\",\"type\":\"%s\",\"nullable\":%t}",
-			field.Name, field.Type.Name(), field.Nullable)
+			field.Name, typeName, field.Nullable)
 	}
 
 	buf.WriteString("],\"metadata\":{")
@@ -189,15 +193,122 @@ func serializeSchemaToJSON(schema *arrow.Schema) []byte {
 	return buf.Bytes()
 }
 
+// serializeTypeName converts DataType to string representation
+func serializeTypeName(dt arrow.DataType) string {
+	switch t := dt.(type) {
+	case *arrow.Int32Type:
+		return "int32"
+	case *arrow.Int64Type:
+		return "int64"
+	case *arrow.Float32Type:
+		return "float32"
+	case *arrow.Float64Type:
+		return "float64"
+	case *arrow.StringType:
+		return "string"
+	case *arrow.FixedSizeListType:
+		elemType := serializeTypeName(t.Elem())                           // 使用 Elem() 方法
+		return fmt.Sprintf("fixed_size_list[%d]<%s>", t.Size(), elemType) // 使用 Size() 方法
+	default:
+		return dt.Name() // Fallback to Type.Name()
+	}
+}
+
 func deserializeSchemaFromJSON(data []byte) (*arrow.Schema, error) {
-	// Simplified deserialization - parses basic structure
-	// For Phase 2, we'll assume the schema matches expected HNSW format
-	// In production, implement full JSON parsing
+	// Parse JSON structure
+	var schemaJSON struct {
+		Fields []struct {
+			Name     string `json:"name"`
+			Type     string `json:"type"`
+			Nullable bool   `json:"nullable"`
+		} `json:"fields"`
+		Metadata map[string]string `json:"metadata"`
+	}
 
-	// For now, return a basic schema (this should be enhanced)
-	// This is a placeholder - in real implementation, properly parse JSON
+	if err := json.Unmarshal(data, &schemaJSON); err != nil {
+		return nil, fmt.Errorf("failed to parse schema JSON: %w", err)
+	}
 
-	// TODO: Implement proper JSON schema deserialization
-	// For Phase 2, we can use SchemaForVectors as default
-	return arrow.SchemaForVectors(768), nil
+	if len(schemaJSON.Fields) == 0 {
+		return nil, fmt.Errorf("schema has no fields")
+	}
+
+	// Convert JSON fields to arrow.Field
+	fields := make([]arrow.Field, len(schemaJSON.Fields)) // 注意：不是指针切片
+	for i, f := range schemaJSON.Fields {
+		dataType, err := parseDataType(f.Type)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse field %q type: %w", f.Name, err)
+		}
+
+		fields[i] = arrow.Field{
+			Name:     f.Name,
+			Type:     dataType,
+			Nullable: f.Nullable,
+			Metadata: make(map[string]string),
+		}
+	}
+
+	// Create schema with metadata using constructor
+	schema := arrow.NewSchema(fields, schemaJSON.Metadata)
+
+	return schema, nil
+}
+
+// parseDataType parses a type string to arrow.DataType
+func parseDataType(typeStr string) (arrow.DataType, error) {
+	// Handle basic types
+	switch typeStr {
+	case "int32":
+		return arrow.PrimInt32(), nil
+	case "int64":
+		return arrow.PrimInt64(), nil
+	case "float32":
+		return arrow.PrimFloat32(), nil
+	case "float64":
+		return arrow.PrimFloat64(), nil
+	case "binary":
+		return arrow.PrimBinary(), nil
+	case "string", "utf8":
+		return arrow.PrimString(), nil
+	}
+
+	// Handle FixedSizeList (e.g., "fixed_size_list[768]<float32>")
+	if strings.HasPrefix(typeStr, "fixed_size_list") {
+		return parseFixedSizeListType(typeStr)
+	}
+
+	return nil, fmt.Errorf("unsupported type: %s", typeStr)
+}
+
+// parseFixedSizeListType parses "fixed_size_list[768]<float32>" format
+func parseFixedSizeListType(typeStr string) (arrow.DataType, error) { // 返回 DataType 而不是 *FixedSizeListType
+	// Extract size: "fixed_size_list[768]<float32>" -> 768
+	sizeStart := strings.Index(typeStr, "[")
+	sizeEnd := strings.Index(typeStr, "]")
+	if sizeStart == -1 || sizeEnd == -1 {
+		return nil, fmt.Errorf("invalid fixed_size_list format: %s", typeStr)
+	}
+
+	sizeStr := typeStr[sizeStart+1 : sizeEnd]
+	size, err := strconv.Atoi(sizeStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid list size: %s", sizeStr)
+	}
+
+	// Extract element type: "fixed_size_list[768]<float32>" -> float32
+	elemStart := strings.Index(typeStr, "<")
+	elemEnd := strings.Index(typeStr, ">")
+	if elemStart == -1 || elemEnd == -1 {
+		return nil, fmt.Errorf("invalid fixed_size_list format: %s", typeStr)
+	}
+
+	elemTypeStr := typeStr[elemStart+1 : elemEnd]
+	elemType, err := parseDataType(elemTypeStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid element type: %w", err)
+	}
+
+	// 使用构造函数创建
+	return arrow.FixedSizeListOf(elemType, size), nil
 }
