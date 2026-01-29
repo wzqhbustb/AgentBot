@@ -1,0 +1,22 @@
+{
+  "document_chunks": [
+    {
+      "Content": "儿子今年 6 岁。\n爸爸比儿子大 30 岁。\n\n",
+      "Source": "test.md",
+      "ChunkID": 0,
+      "Metadata": {
+        "nodeID": "0",
+        "source": "test.md"
+      }
+    }
+  ],
+  "node_id_to_chunk_index": {
+    "0": 0
+  },
+  "document_contents": {
+    "/Users/wangyang/hello_langchain/langgraphdemogo/test.md": "儿子今年 6 岁。\n爸爸比儿子大 30 岁。"
+  },
+  "dimension": 768,
+  "created_at": "2026-01-29T15:15:29+08:00",
+  "updated_at": "2026-01-29T15:15:29+08:00"
+}
