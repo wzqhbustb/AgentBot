@@ -21,6 +21,7 @@ import (
 
 // For test: /Users/wangyang/gitclonefiles/datafusion/README.md
 // For test: /Users/wangyang/gitclonefiles/ClickHouse/src/core/Settings.cpp
+// For test: /Users/wangyang/hello_langchain/langgraphdemogo/test.md
 
 type LLMType int
 
@@ -534,8 +535,13 @@ func (t *TutorAgent) vectorizeDocuments(ctx context.Context, state TutorState) (
 	return state, nil
 }
 
-// 新增：保存持久化数据
+// 修改 savePersistedData 函数，确保目录存在
 func (t *TutorAgent) savePersistedData(state TutorState) error {
+	// ✨ 新增：确保数据目录存在
+	if err := os.MkdirAll(state.DataDir, 0755); err != nil {
+		return fmt.Errorf("创建数据目录失败: %v", err)
+	}
+
 	// 1. 保存元数据
 	if err := t.saveMetadata(state); err != nil {
 		return fmt.Errorf("保存元数据失败: %v", err)

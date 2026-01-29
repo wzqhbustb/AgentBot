@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"ollama-demo/lance/arrow"
 	"ollama-demo/lance/column"
+	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 )
 
 // 扁平化存储的Schema定义
@@ -134,7 +133,7 @@ func (h *HNSWIndex) saveNodes(filename string) error {
 	return nil
 }
 
-// saveConnections 保存所有连接关系
+// 修改 saveConnections 函数，处理空连接的情况
 func (h *HNSWIndex) saveConnections(filename string) error {
 	schema := SchemaForConnections()
 
@@ -157,12 +156,11 @@ func (h *HNSWIndex) saveConnections(filename string) error {
 		}
 	}
 
-	// 如果没有连接关系，创建空文件
+	// 如果没有连接关系，不创建文件（避免空数组验证错误）
 	if len(nodeIDs) == 0 {
-		// 创建空数组
-		nodeIDs = []int32{}
-		layers = []int32{}
-		neighborIDs = []int32{}
+		// 创建一个空文件标记，或者直接返回
+		// 在加载时需要检测文件是否存在
+		return nil
 	}
 
 	// 创建Arrow数组
@@ -179,6 +177,7 @@ func (h *HNSWIndex) saveConnections(filename string) error {
 	if err != nil {
 		return fmt.Errorf("create record batch failed: %w", err)
 	}
+
 	// 写入文件
 	writer, err := column.NewWriter(filename, schema, column.DefaultSerializationOptions())
 	if err != nil {
@@ -357,8 +356,14 @@ func (h *HNSWIndex) loadNodes(filename string) error {
 	return nil
 }
 
-// loadConnections 加载连接关系 - 修复版
+// 同时修改 loadConnections 函数，处理文件不存在的情况
 func (h *HNSWIndex) loadConnections(filename string) error {
+	// ✨ 检查文件是否存在（处理无连接的情况）
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		// 文件不存在，说明保存时没有连接关系，这是合法的
+		return nil
+	}
+
 	reader, err := column.NewReader(filename)
 	if err != nil {
 		return fmt.Errorf("create reader failed: %w", err)
@@ -370,48 +375,33 @@ func (h *HNSWIndex) loadConnections(filename string) error {
 		return fmt.Errorf("read connections failed: %w", err)
 	}
 
-	// 如果没有连接数据，直接返回
-	if batch.NumRows() == 0 {
-		return nil
-	}
-
 	nodeIDArray := batch.Column(0).(*arrow.Int32Array)
 	layerArray := batch.Column(1).(*arrow.Int32Array)
 	neighborIDArray := batch.Column(2).(*arrow.Int32Array)
 
-	// 按(nodeID, layer)分组重建连接关系
-	connectionMap := make(map[string][]int)
+	numConnections := nodeIDArray.Len()
 
-	for i := 0; i < nodeIDArray.Len(); i++ {
+	// 重建连接关系
+	for i := 0; i < numConnections; i++ {
 		nodeID := int(nodeIDArray.Value(i))
 		layer := int(layerArray.Value(i))
 		neighborID := int(neighborIDArray.Value(i))
 
-		// 验证节点ID有效性
 		if nodeID < 0 || nodeID >= len(h.nodes) {
-			return fmt.Errorf("invalid node ID in connections: %d (valid range: 0-%d)", nodeID, len(h.nodes)-1)
+			return fmt.Errorf("invalid node_id %d at connection index %d (valid range: [0, %d))",
+				nodeID, i, len(h.nodes))
 		}
 		if neighborID < 0 || neighborID >= len(h.nodes) {
-			return fmt.Errorf("invalid neighbor ID in connections: %d (valid range: 0-%d)", neighborID, len(h.nodes)-1)
+			return fmt.Errorf("invalid neighbor_id %d at connection index %d (valid range: [0, %d))",
+				neighborID, i, len(h.nodes))
+		}
+		if layer < 0 || layer > h.nodes[nodeID].Level() {
+			return fmt.Errorf("invalid layer %d for node %d at connection index %d (valid range: [0, %d])",
+				layer, nodeID, i, h.nodes[nodeID].Level())
 		}
 
-		key := fmt.Sprintf("%d_%d", nodeID, layer)
-		connectionMap[key] = append(connectionMap[key], neighborID)
-	}
-
-	// 设置节点的连接关系
-	for key, neighbors := range connectionMap {
-		parts := strings.Split(key, "_")
-		nodeID, _ := strconv.Atoi(parts[0])
-		layer, _ := strconv.Atoi(parts[1])
-
-		if nodeID < len(h.nodes) && h.nodes[nodeID] != nil {
-			// 验证layer是否在节点的有效范围内
-			if layer > h.nodes[nodeID].Level() {
-				return fmt.Errorf("invalid layer %d for node %d (max level: %d)", layer, nodeID, h.nodes[nodeID].Level())
-			}
-			h.nodes[nodeID].SetConnections(layer, neighbors)
-		}
+		node := h.nodes[nodeID]
+		node.AddConnection(layer, neighborID)
 	}
 
 	return nil
