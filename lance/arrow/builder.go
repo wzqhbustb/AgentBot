@@ -83,6 +83,71 @@ func (b *Int32Builder) NewArray() Array {
 
 func (b *Int32Builder) Release() {}
 
+// --- Int64Builder ---
+
+type Int64Builder struct {
+	data     []int64
+	nulls    *Bitmap
+	hasNulls bool
+}
+
+func NewInt64Builder() *Int64Builder {
+	return &Int64Builder{
+		data:  make([]int64, 0, 16),
+		nulls: NewBitmap(0),
+	}
+}
+
+func (b *Int64Builder) Reserve(n int) {
+	if cap(b.data)-len(b.data) < n {
+		newCap := len(b.data) + n
+		newData := make([]int64, len(b.data), newCap)
+		copy(newData, b.data)
+		b.data = newData
+	}
+}
+
+func (b *Int64Builder) Append(v int64) {
+	b.data = append(b.data, v)
+	if b.hasNulls {
+		b.nulls.Resize(len(b.data))
+		b.nulls.Set(len(b.data) - 1)
+	}
+}
+
+func (b *Int64Builder) AppendNull() {
+	if !b.hasNulls {
+		b.hasNulls = true
+		b.nulls = NewBitmap(len(b.data))
+		b.nulls.SetAll()
+	}
+	b.data = append(b.data, 0) // placeholder
+	b.nulls.Resize(len(b.data))
+	b.nulls.Clear(len(b.data) - 1)
+}
+
+func (b *Int64Builder) Len() int {
+	return len(b.data)
+}
+
+func (b *Int64Builder) NewArray() Array {
+	var nullBitmap *Bitmap
+	if b.hasNulls {
+		nullBitmap = b.nulls
+	}
+
+	arr := NewInt64Array(b.data, nullBitmap)
+
+	// Reset
+	b.data = make([]int64, 0, 16)
+	b.nulls = NewBitmap(0)
+	b.hasNulls = false
+
+	return arr
+}
+
+func (b *Int64Builder) Release() {}
+
 // --- Float32Builder ---
 
 type Float32Builder struct {
@@ -146,6 +211,70 @@ func (b *Float32Builder) NewArray() Array {
 }
 
 func (b *Float32Builder) Release() {}
+
+// --- Float64Builder ---
+
+type Float64Builder struct {
+	data     []float64
+	nulls    *Bitmap
+	hasNulls bool
+}
+
+func NewFloat64Builder() *Float64Builder {
+	return &Float64Builder{
+		data:  make([]float64, 0, 16),
+		nulls: NewBitmap(0),
+	}
+}
+
+func (b *Float64Builder) Reserve(n int) {
+	if cap(b.data)-len(b.data) < n {
+		newCap := len(b.data) + n
+		newData := make([]float64, len(b.data), newCap)
+		copy(newData, b.data)
+		b.data = newData
+	}
+}
+
+func (b *Float64Builder) Append(v float64) {
+	b.data = append(b.data, v)
+	if b.hasNulls {
+		b.nulls.Resize(len(b.data))
+		b.nulls.Set(len(b.data) - 1)
+	}
+}
+
+func (b *Float64Builder) AppendNull() {
+	if !b.hasNulls {
+		b.hasNulls = true
+		b.nulls = NewBitmap(len(b.data))
+		b.nulls.SetAll()
+	}
+	b.data = append(b.data, 0)
+	b.nulls.Resize(len(b.data))
+	b.nulls.Clear(len(b.data) - 1)
+}
+
+func (b *Float64Builder) Len() int {
+	return len(b.data)
+}
+
+func (b *Float64Builder) NewArray() Array {
+	var nullBitmap *Bitmap
+	if b.hasNulls {
+		nullBitmap = b.nulls
+	}
+
+	arr := NewFloat64Array(b.data, nullBitmap)
+
+	b.data = make([]float64, 0, 16)
+	b.nulls = NewBitmap(0)
+	b.hasNulls = false
+
+	return arr
+}
+
+func (b *Float64Builder) Release() {}
 
 // --- FixedSizeListBuilder (for vectors) ---
 

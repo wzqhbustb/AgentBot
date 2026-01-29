@@ -81,6 +81,20 @@ func (r *RecordBatch) String() string {
 	return fmt.Sprintf("RecordBatch{schema: %s, rows: %d}", r.schema.String(), r.numRows)
 }
 
+// --- Typed column accessors ---
+
+func (r *RecordBatch) Int32Column(i int) *Int32Array {
+	return r.columns[i].(*Int32Array)
+}
+
+func (r *RecordBatch) Float32Column(i int) *Float32Array {
+	return r.columns[i].(*Float32Array)
+}
+
+func (r *RecordBatch) VectorColumn(i int) *FixedSizeListArray {
+	return r.columns[i].(*FixedSizeListArray)
+}
+
 // --- RecordBatchBuilder ---
 
 // RecordBatchBuilder helps build record batches incrementally
@@ -143,11 +157,11 @@ func NewBuilderForType(dtype DataType) Builder {
 	case INT32:
 		return NewInt32Builder()
 	case INT64:
-		return &Int64Builder{data: make([]int64, 0, 16), nulls: NewBitmap(0)}
+		return NewInt64Builder()
 	case FLOAT32:
 		return NewFloat32Builder()
 	case FLOAT64:
-		return &Float64Builder{data: make([]float64, 0, 16), nulls: NewBitmap(0)}
+		return NewFloat64Builder()
 	case FIXED_SIZE_LIST:
 		listType := dtype.(*FixedSizeListType)
 		return NewFixedSizeListBuilder(listType)
@@ -158,116 +172,4 @@ func NewBuilderForType(dtype DataType) Builder {
 	default:
 		panic(fmt.Sprintf("unsupported type: %s", dtype.Name()))
 	}
-}
-
-// --- Additional builders (Int64, Float64) ---
-
-type Int64Builder struct {
-	data     []int64
-	nulls    *Bitmap
-	hasNulls bool
-}
-
-func (b *Int64Builder) Reserve(n int) {
-	if cap(b.data)-len(b.data) < n {
-		newData := make([]int64, len(b.data), len(b.data)+n)
-		copy(newData, b.data)
-		b.data = newData
-	}
-}
-
-func (b *Int64Builder) Append(v int64) {
-	b.data = append(b.data, v)
-	if b.hasNulls {
-		b.nulls.Resize(len(b.data))
-		b.nulls.Set(len(b.data) - 1)
-	}
-}
-
-func (b *Int64Builder) AppendNull() {
-	if !b.hasNulls {
-		b.hasNulls = true
-		b.nulls = NewBitmap(len(b.data))
-		b.nulls.SetAll()
-	}
-	b.data = append(b.data, 0)
-	b.nulls.Resize(len(b.data))
-	b.nulls.Clear(len(b.data) - 1)
-}
-
-func (b *Int64Builder) Len() int { return len(b.data) }
-
-func (b *Int64Builder) NewArray() Array {
-	var nullBitmap *Bitmap
-	if b.hasNulls {
-		nullBitmap = b.nulls
-	}
-	arr := NewInt64Array(b.data, nullBitmap)
-	b.data = make([]int64, 0, 16)
-	b.nulls = NewBitmap(0)
-	b.hasNulls = false
-	return arr
-}
-
-func (b *Int64Builder) Release() {}
-
-type Float64Builder struct {
-	data     []float64
-	nulls    *Bitmap
-	hasNulls bool
-}
-
-func (b *Float64Builder) Reserve(n int) {
-	if cap(b.data)-len(b.data) < n {
-		newData := make([]float64, len(b.data), len(b.data)+n)
-		copy(newData, b.data)
-		b.data = newData
-	}
-}
-
-func (b *Float64Builder) Append(v float64) {
-	b.data = append(b.data, v)
-	if b.hasNulls {
-		b.nulls.Resize(len(b.data))
-		b.nulls.Set(len(b.data) - 1)
-	}
-}
-
-func (b *Float64Builder) AppendNull() {
-	if !b.hasNulls {
-		b.hasNulls = true
-		b.nulls = NewBitmap(len(b.data))
-		b.nulls.SetAll()
-	}
-	b.data = append(b.data, 0)
-	b.nulls.Resize(len(b.data))
-	b.nulls.Clear(len(b.data) - 1)
-}
-
-func (b *Float64Builder) Len() int { return len(b.data) }
-
-func (b *Float64Builder) NewArray() Array {
-	var nullBitmap *Bitmap
-	if b.hasNulls {
-		nullBitmap = b.nulls
-	}
-	arr := NewFloat64Array(b.data, nullBitmap)
-	b.data = make([]float64, 0, 16)
-	b.nulls = NewBitmap(0)
-	b.hasNulls = false
-	return arr
-}
-
-func (b *Float64Builder) Release() {}
-
-func (r *RecordBatch) Int32Column(i int) *Int32Array {
-	return r.columns[i].(*Int32Array)
-}
-
-func (r *RecordBatch) Float32Column(i int) *Float32Array {
-	return r.columns[i].(*Float32Array)
-}
-
-func (r *RecordBatch) VectorColumn(i int) *FixedSizeListArray {
-	return r.columns[i].(*FixedSizeListArray)
 }
