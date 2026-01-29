@@ -306,7 +306,7 @@ func loadMetadata(filename string) ([]int32, error) {
 	return metadata, nil
 }
 
-// loadNodes 加载节点数据
+// loadNodes 加载节点数据 - 修复版
 func (h *HNSWIndex) loadNodes(filename string) error {
 	reader, err := column.NewReader(filename)
 	if err != nil {
@@ -327,10 +327,19 @@ func (h *HNSWIndex) loadNodes(filename string) error {
 	vectorArray := vectorListArray.Values().(*arrow.Float32Array)
 	vectorValues := vectorArray.Values()
 
-	// 重构节点
-	h.nodes = make([]*Node, idArray.Len())
+	// 验证节点ID的连续性
+	numNodes := idArray.Len()
+	for i := 0; i < numNodes; i++ {
+		id := int(idArray.Value(i))
+		if id != i {
+			return fmt.Errorf("node ID mismatch at index %d: expected %d, got %d", i, i, id)
+		}
+	}
 
-	for i := 0; i < idArray.Len(); i++ {
+	// 重构节点
+	h.nodes = make([]*Node, numNodes)
+
+	for i := 0; i < numNodes; i++ {
 		id := int(idArray.Value(i))
 		level := int(levelArray.Value(i))
 
@@ -348,7 +357,7 @@ func (h *HNSWIndex) loadNodes(filename string) error {
 	return nil
 }
 
-// loadConnections 加载连接关系
+// loadConnections 加载连接关系 - 修复版
 func (h *HNSWIndex) loadConnections(filename string) error {
 	reader, err := column.NewReader(filename)
 	if err != nil {
@@ -378,6 +387,14 @@ func (h *HNSWIndex) loadConnections(filename string) error {
 		layer := int(layerArray.Value(i))
 		neighborID := int(neighborIDArray.Value(i))
 
+		// 验证节点ID有效性
+		if nodeID < 0 || nodeID >= len(h.nodes) {
+			return fmt.Errorf("invalid node ID in connections: %d (valid range: 0-%d)", nodeID, len(h.nodes)-1)
+		}
+		if neighborID < 0 || neighborID >= len(h.nodes) {
+			return fmt.Errorf("invalid neighbor ID in connections: %d (valid range: 0-%d)", neighborID, len(h.nodes)-1)
+		}
+
 		key := fmt.Sprintf("%d_%d", nodeID, layer)
 		connectionMap[key] = append(connectionMap[key], neighborID)
 	}
@@ -389,6 +406,10 @@ func (h *HNSWIndex) loadConnections(filename string) error {
 		layer, _ := strconv.Atoi(parts[1])
 
 		if nodeID < len(h.nodes) && h.nodes[nodeID] != nil {
+			// 验证layer是否在节点的有效范围内
+			if layer > h.nodes[nodeID].Level() {
+				return fmt.Errorf("invalid layer %d for node %d (max level: %d)", layer, nodeID, h.nodes[nodeID].Level())
+			}
 			h.nodes[nodeID].SetConnections(layer, neighbors)
 		}
 	}
