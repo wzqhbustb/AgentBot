@@ -177,17 +177,13 @@ func (f *Footer) ReadFrom(r io.Reader) (int64, error) {
 	var storedChecksum uint32
 	binary.Read(reader, ByteOrder, &storedChecksum)
 
-	// Verify checksum (recalculate from data before checksum field)
-	checksumOffset := FooterSize - 4 // Checksum is last 4 bytes
-	dataForChecksum := footerBuf[:checksumOffset]
+	// Verify checksum
+	// The checksum was calculated on the data BEFORE the checksum field
+	// So we need to recalculate from the beginning up to where we just read the checksum
+	currentPos := int(reader.Size()) - reader.Len() - 4 // Position before reading checksum
+	dataForChecksum := footerBuf[:currentPos]
 
-	// Find actual data end (before padding)
-	actualEnd := checksumOffset
-	for actualEnd > 0 && dataForChecksum[actualEnd-1] == 0 {
-		actualEnd--
-	}
-
-	computed := crc32.ChecksumIEEE(dataForChecksum[:actualEnd])
+	computed := crc32.ChecksumIEEE(dataForChecksum)
 	if computed != storedChecksum {
 		return int64(n), fmt.Errorf("footer checksum mismatch: computed 0x%08X vs stored 0x%08X", computed, storedChecksum)
 	}
