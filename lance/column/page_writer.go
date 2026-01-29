@@ -75,7 +75,7 @@ func (w *PageWriter) serializeInt32Array(array *arrow.Int32Array) ([]byte, error
 	}
 
 	if hasNulls {
-		nullBitmap := array.NullBitmap()
+		nullBitmap := array.Data().NullBitmap()
 		bitmapBytes := (array.Len() + 7) / 8
 		if err := binary.Write(buf, binary.LittleEndian, int32(bitmapBytes)); err != nil {
 			return nil, err
@@ -84,7 +84,7 @@ func (w *PageWriter) serializeInt32Array(array *arrow.Int32Array) ([]byte, error
 	}
 
 	// Write values
-	values := array.Data().Int32Values()
+	values := array.Values()
 	if err := binary.Write(buf, binary.LittleEndian, int32(len(values))); err != nil {
 		return nil, err
 	}
@@ -108,7 +108,7 @@ func (w *PageWriter) serializeInt64Array(array *arrow.Int64Array) ([]byte, error
 	}
 
 	if hasNulls {
-		nullBitmap := array.NullBitmap()
+		nullBitmap := array.Data().NullBitmap()
 		bitmapBytes := (array.Len() + 7) / 8
 		if err := binary.Write(buf, binary.LittleEndian, int32(bitmapBytes)); err != nil {
 			return nil, err
@@ -116,7 +116,7 @@ func (w *PageWriter) serializeInt64Array(array *arrow.Int64Array) ([]byte, error
 		buf.Write(nullBitmap.Bytes()[:bitmapBytes])
 	}
 
-	values := array.Data().Int64Values()
+	values := array.Values()
 	if err := binary.Write(buf, binary.LittleEndian, int32(len(values))); err != nil {
 		return nil, err
 	}
@@ -140,7 +140,7 @@ func (w *PageWriter) serializeFloat32Array(array *arrow.Float32Array) ([]byte, e
 	}
 
 	if hasNulls {
-		nullBitmap := array.NullBitmap()
+		nullBitmap := array.Data().NullBitmap()
 		bitmapBytes := (array.Len() + 7) / 8
 		if err := binary.Write(buf, binary.LittleEndian, int32(bitmapBytes)); err != nil {
 			return nil, err
@@ -148,7 +148,7 @@ func (w *PageWriter) serializeFloat32Array(array *arrow.Float32Array) ([]byte, e
 		buf.Write(nullBitmap.Bytes()[:bitmapBytes])
 	}
 
-	values := array.Data().Float32Values()
+	values := array.Values()
 	if err := binary.Write(buf, binary.LittleEndian, int32(len(values))); err != nil {
 		return nil, err
 	}
@@ -172,7 +172,7 @@ func (w *PageWriter) serializeFloat64Array(array *arrow.Float64Array) ([]byte, e
 	}
 
 	if hasNulls {
-		nullBitmap := array.NullBitmap()
+		nullBitmap := array.Data().NullBitmap()
 		bitmapBytes := (array.Len() + 7) / 8
 		if err := binary.Write(buf, binary.LittleEndian, int32(bitmapBytes)); err != nil {
 			return nil, err
@@ -180,7 +180,7 @@ func (w *PageWriter) serializeFloat64Array(array *arrow.Float64Array) ([]byte, e
 		buf.Write(nullBitmap.Bytes()[:bitmapBytes])
 	}
 
-	values := array.Data().Float64Values()
+	values := array.Values()
 	if err := binary.Write(buf, binary.LittleEndian, int32(len(values))); err != nil {
 		return nil, err
 	}
@@ -200,7 +200,7 @@ func (w *PageWriter) serializeFixedSizeListArray(array *arrow.FixedSizeListArray
 
 	// Write list size
 	listSize := array.ListSize()
-	if err := binary.Write(buf, binary.LittleEndian, listSize); err != nil {
+	if err := binary.Write(buf, binary.LittleEndian, int32(listSize)); err != nil {
 		return nil, err
 	}
 
@@ -211,7 +211,7 @@ func (w *PageWriter) serializeFixedSizeListArray(array *arrow.FixedSizeListArray
 	}
 
 	if hasNulls {
-		nullBitmap := array.NullBitmap()
+		nullBitmap := array.Data().NullBitmap()
 		bitmapBytes := (array.Len() + 7) / 8
 		if err := binary.Write(buf, binary.LittleEndian, int32(bitmapBytes)); err != nil {
 			return nil, err
@@ -225,10 +225,11 @@ func (w *PageWriter) serializeFixedSizeListArray(array *arrow.FixedSizeListArray
 	}
 
 	// Write flattened values
-	valuesInterface := array.Values()
+	valuesArray := array.Values()
 
-	switch values := valuesInterface.(type) {
-	case []float32:
+	switch arr := valuesArray.(type) {
+	case *arrow.Float32Array:
+		values := arr.Values()
 		// Write total number of float32 values
 		totalValues := int32(len(values))
 		if err := binary.Write(buf, binary.LittleEndian, totalValues); err != nil {
@@ -240,7 +241,8 @@ func (w *PageWriter) serializeFixedSizeListArray(array *arrow.FixedSizeListArray
 				return nil, err
 			}
 		}
-	case []int32:
+	case *arrow.Int32Array:
+		values := arr.Values()
 		totalValues := int32(len(values))
 		if err := binary.Write(buf, binary.LittleEndian, totalValues); err != nil {
 			return nil, err
@@ -251,7 +253,7 @@ func (w *PageWriter) serializeFixedSizeListArray(array *arrow.FixedSizeListArray
 			}
 		}
 	default:
-		return nil, fmt.Errorf("unsupported FixedSizeList element type: %T", valuesInterface)
+		return nil, fmt.Errorf("unsupported FixedSizeList element type: %T", valuesArray)
 	}
 
 	return buf.Bytes(), nil

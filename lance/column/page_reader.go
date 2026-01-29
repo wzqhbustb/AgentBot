@@ -271,7 +271,9 @@ func (r *PageReader) deserializeFixedSizeListArray(data []byte, listType *arrow.
 			}
 		}
 
-		return arrow.NewFixedSizeListArray(values, int(listSize), nullBitmap), nil
+		// Create Float32Array from values
+		valuesArray := arrow.NewFloat32Array(values, nil)
+		return arrow.NewFixedSizeListArray(listType, valuesArray, nullBitmap), nil
 
 	case arrow.INT32:
 		var totalValues int32
@@ -286,12 +288,9 @@ func (r *PageReader) deserializeFixedSizeListArray(data []byte, listType *arrow.
 			}
 		}
 
-		valuesFloat32 := make([]float32, len(values))
-		for i, v := range values {
-			valuesFloat32[i] = float32(v)
-		}
-
-		return arrow.NewFixedSizeListArray(valuesFloat32, int(listSize), nullBitmap), nil
+		// Create Int32Array from values
+		valuesArray := arrow.NewInt32Array(values, nil)
+		return arrow.NewFixedSizeListArray(listType, valuesArray, nullBitmap), nil
 
 	default:
 		return nil, fmt.Errorf("unsupported FixedSizeList element type: %s", elemType.Name())
