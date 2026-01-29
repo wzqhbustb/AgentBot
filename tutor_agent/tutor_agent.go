@@ -3,6 +3,7 @@ package tutor_agent
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -26,7 +27,21 @@ type LLMType int
 const (
 	OpenAI LLMType = iota
 	Ollama
+
+	DefaultDataDir = "./tutor_data"  // 默认数据目录
+	HNSWSubDir     = "hnsw_index"    // HNSW索引子目录
+	MetadataFile   = "metadata.json" // 元数据文件
 )
+
+// 添加持久化元数据结构
+type PersistentMetadata struct {
+	DocumentChunks     []DocumentChunk   `json:"document_chunks"`
+	NodeIDToChunkIndex map[int]int       `json:"node_id_to_chunk_index"`
+	DocumentContents   map[string]string `json:"document_contents"`
+	Dimension          int               `json:"dimension"`
+	CreatedAt          string            `json:"created_at"`
+	UpdatedAt          string            `json:"updated_at"`
+}
 
 type DocumentChunk struct {
 	Content  string            // 切片内容
@@ -66,6 +81,9 @@ type TutorState struct {
 
 	// Current teaching stage
 	Stage string
+
+	// 新增：数据目录路径
+	DataDir string
 }
 
 type TutorAgent struct {
@@ -73,7 +91,8 @@ type TutorAgent struct {
 	embedder  embeddings.Embedder
 	graph     *graph.StateRunnable[TutorState]
 	scanner   *bufio.Scanner
-	dimension int // Embedding dimension
+	dimension int    // Embedding dimension
+	dataDir   string // 新增：数据目录
 }
 
 func NewTutorAgent(llmType LLMType) (*TutorAgent, error) {
@@ -87,7 +106,29 @@ func NewTutorAgent(llmType LLMType) (*TutorAgent, error) {
 	}
 }
 
-func newOllamaTutorAgent() (*TutorAgent, error) {
+// 修改 NewTutorAgent，添加可选的数据目录参数
+func NewTutorAgentWithDataDir(llmType LLMType, dataDir string) (*TutorAgent, error) {
+	if dataDir == "" {
+		dataDir = DefaultDataDir
+	}
+
+	// 确保数据目录存在
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return nil, fmt.Errorf("创建数据目录失败: %v", err)
+	}
+
+	switch llmType {
+	case OpenAI:
+		return nil, errors.New("unsupported LLM type: OpenAI")
+	case Ollama:
+		return newOllamaTutorAgentWithDataDir(dataDir)
+	default:
+		return nil, errors.New(fmt.Sprintf("unrecognized LLM type: %d", llmType))
+	}
+}
+
+// 修改 newOllamaTutorAgent
+func newOllamaTutorAgentWithDataDir(dataDir string) (*TutorAgent, error) {
 	// Config Ollama
 	model, err := openai.New(
 		openai.WithBaseURL("http://localhost:11434/v1"),
@@ -115,9 +156,10 @@ func newOllamaTutorAgent() (*TutorAgent, error) {
 
 	agent := &TutorAgent{
 		model:     model,
-		embedder:  embedder, // 初始化 embedder
+		embedder:  embedder,
 		scanner:   bufio.NewScanner(os.Stdin),
-		dimension: 768, // nomic-embed-text 的维度是 768
+		dimension: 768,
+		dataDir:   dataDir, // 保存数据目录
 	}
 
 	if err := agent.buildGraph(); err != nil {
@@ -125,6 +167,68 @@ func newOllamaTutorAgent() (*TutorAgent, error) {
 	}
 
 	return agent, nil
+}
+
+// 保持向后兼容
+func newOllamaTutorAgent() (*TutorAgent, error) {
+	return newOllamaTutorAgentWithDataDir(DefaultDataDir)
+}
+
+// 新增：保存元数据到文件
+func (t *TutorAgent) saveMetadata(state TutorState) error {
+	metadataPath := filepath.Join(state.DataDir, MetadataFile)
+
+	metadata := PersistentMetadata{
+		DocumentChunks:     state.DocumentChunks,
+		NodeIDToChunkIndex: state.NodeIDToChunkIndex,
+		DocumentContents:   state.DocumentContents,
+		Dimension:          t.dimension,
+		CreatedAt:          time.Now().Format(time.RFC3339),
+		UpdatedAt:          time.Now().Format(time.RFC3339),
+	}
+
+	data, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return fmt.Errorf("序列化元数据失败: %v", err)
+	}
+
+	if err := os.WriteFile(metadataPath, data, 0644); err != nil {
+		return fmt.Errorf("写入元数据文件失败: %v", err)
+	}
+
+	return nil
+}
+
+// 新增：从文件加载元数据
+func (t *TutorAgent) loadMetadata(dataDir string) (*PersistentMetadata, error) {
+	metadataPath := filepath.Join(dataDir, MetadataFile)
+
+	data, err := os.ReadFile(metadataPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil // 文件不存在，返回 nil 但不报错
+		}
+		return nil, fmt.Errorf("读取元数据文件失败: %v", err)
+	}
+
+	var metadata PersistentMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return nil, fmt.Errorf("解析元数据失败: %v", err)
+	}
+
+	return &metadata, nil
+}
+
+// 新增：检查是否存在已保存的数据
+func (t *TutorAgent) hasPersistedData(dataDir string) bool {
+	metadataPath := filepath.Join(dataDir, MetadataFile)
+	hnswDir := filepath.Join(dataDir, HNSWSubDir)
+
+	// 检查元数据文件和HNSW目录是否都存在
+	_, err1 := os.Stat(metadataPath)
+	_, err2 := os.Stat(filepath.Join(hnswDir, "nodes.lance"))
+
+	return err1 == nil && err2 == nil
 }
 
 func (t *TutorAgent) buildGraph() error {
@@ -170,13 +274,44 @@ func (t *TutorAgent) buildGraph() error {
 	return nil
 }
 
+// 修改 loadDocuments 函数，添加数据加载逻辑
 func (t *TutorAgent) loadDocuments(ctx context.Context, state TutorState) (TutorState, error) {
-	fmt.Println("\n📚 === 智能助教系统（RAG 增强版）===")
+	// 设置数据目录
+	state.DataDir = t.dataDir
+
+	fmt.Println("\n📚 === 智能助教系统（RAG 增强版 + 持久化）===")
 	fmt.Println("我可以帮助你深入学习和理解文档内容！")
 	fmt.Println("💡 使用向量搜索技术，精准检索相关内容")
+	fmt.Println("💾 支持数据持久化，自动保存和恢复索引")
 	fmt.Println()
 
-	// 获取文件路径
+	// ✨ 检查是否有已保存的数据
+	if t.hasPersistedData(state.DataDir) {
+		fmt.Println("🔍 检测到已保存的索引数据")
+		fmt.Print("是否加载已有数据？(y/n，默认 y): ")
+
+		if t.scanner.Scan() {
+			input := strings.TrimSpace(strings.ToLower(t.scanner.Text()))
+			if input == "" || input == "y" || input == "yes" {
+				// 加载已有数据
+				fmt.Println("\n📥 正在加载已保存的数据...")
+				if err := t.loadPersistedData(ctx, &state); err != nil {
+					fmt.Printf("⚠️  加载数据失败: %v\n", err)
+					fmt.Println("将重新创建索引...")
+				} else {
+					fmt.Printf("✅ 成功加载 %d 个文档块\n", len(state.DocumentChunks))
+					fmt.Println("💡 提示：输入 'quit' 或 'exit' 可以退出")
+					state.Stage = "documents_loaded"
+					state.Embedder = t.embedder
+					state.ShouldContinue = true
+					// 直接跳到分析阶段
+					return state, nil
+				}
+			}
+		}
+	}
+
+	// 原有的文档加载逻辑
 	fmt.Print("请输入要学习的文档路径（多个文件用逗号分隔）: ")
 	if !t.scanner.Scan() {
 		return state, fmt.Errorf("读取输入失败")
@@ -208,8 +343,42 @@ func (t *TutorAgent) loadDocuments(ctx context.Context, state TutorState) (Tutor
 	}
 
 	state.Stage = "documents_loaded"
-	state.Embedder = t.embedder // ✨ 新增：将 embedder 存入 state
+	state.Embedder = t.embedder
 	return state, nil
+}
+
+// 新增：加载持久化的数据
+func (t *TutorAgent) loadPersistedData(ctx context.Context, state *TutorState) error {
+	// 1. 加载元数据
+	metadata, err := t.loadMetadata(state.DataDir)
+	if err != nil {
+		return err
+	}
+	if metadata == nil {
+		return fmt.Errorf("元数据不存在")
+	}
+
+	// 2. 恢复文档块和映射
+	state.DocumentChunks = metadata.DocumentChunks
+	state.NodeIDToChunkIndex = metadata.NodeIDToChunkIndex
+	state.DocumentContents = metadata.DocumentContents
+
+	// 3. 加载 HNSW 索引
+	hnswDir := filepath.Join(state.DataDir, HNSWSubDir)
+	loadedIndex, err := hnsw.LoadHNSWFromLance(hnswDir)
+	if err != nil {
+		return fmt.Errorf("加载 HNSW 索引失败: %v", err)
+	}
+	state.VectorIndex = loadedIndex
+
+	// 4. 设置 embedder
+	state.Embedder = t.embedder
+
+	fmt.Printf("   📊 文档块: %d 个\n", len(state.DocumentChunks))
+	fmt.Printf("   🗂️  文档: %d 个\n", len(state.DocumentContents))
+	fmt.Printf("   🔗 映射关系: %d 条\n", len(state.NodeIDToChunkIndex))
+
+	return nil
 }
 
 // loadFile 加载单个文件
@@ -269,6 +438,7 @@ func (t *TutorAgent) chunkText(text string, chunkSize int, overlap int) []string
 }
 
 // vectorizeDocuments - 向量化文档
+// 修改 vectorizeDocuments 函数，添加保存逻辑
 func (t *TutorAgent) vectorizeDocuments(ctx context.Context, state TutorState) (TutorState, error) {
 	fmt.Println("\n🔄 正在处理文档...")
 
@@ -277,34 +447,30 @@ func (t *TutorAgent) vectorizeDocuments(ctx context.Context, state TutorState) (
 		M:              16,
 		EfConstruction: 200,
 		Dimension:      t.dimension,
-		DistanceFunc:   hnsw.CosineDistance, // 使用余弦距离
+		DistanceFunc:   hnsw.CosineDistance,
 	})
 	fmt.Printf("✅ 创建向量索引 (dimension=%d)\n", t.dimension)
 
 	// 切块参数
-	chunkSize := 500 // 每块约 500 字符
-	overlap := 50    // 重叠 50 字符
+	chunkSize := 500
+	overlap := 50
 
 	state.DocumentChunks = []DocumentChunk{}
-	// 新增：创建 NodeID 到 Chunk 索引的映射
-	nodeIDToChunkIndex := make(map[int]int) //
+	nodeIDToChunkIndex := make(map[int]int)
 	chunkID := 0
 
-	// 处理每个文档
+	// 处理每个文档（保持原有逻辑）
 	for path, content := range state.DocumentContents {
 		fmt.Printf("\n📄 处理文档: %s\n", filepath.Base(path))
 
-		// 切分文档
 		chunks := t.chunkText(content, chunkSize, overlap)
 		fmt.Printf("   切分为 %d 个块\n", len(chunks))
 
-		// 向量化每个块
 		for i, chunkText := range chunks {
 			var vector []float32
 			var err error
 
 			for retry := 0; retry < 3; retry++ {
-				// 生成 embedding
 				vector, err = state.Embedder.EmbedQuery(ctx, chunkText)
 				if err == nil {
 					break
@@ -318,24 +484,20 @@ func (t *TutorAgent) vectorizeDocuments(ctx context.Context, state TutorState) (
 				continue
 			}
 
-			// 转换为 float32
 			vector32 := make([]float32, len(vector))
 			for j, v := range vector {
 				vector32[j] = float32(v)
 			}
 
-			// 添加到 HNSW 索引
 			nodeID, err := state.VectorIndex.Add(vector32)
 			if err != nil {
 				fmt.Printf("⚠️  块 %d 添加到索引失败: %v\n", i, err)
 				continue
 			}
 
-			// 记录映射关系
 			chunkIndex := len(state.DocumentChunks)
 			nodeIDToChunkIndex[nodeID] = chunkIndex
 
-			// 保存块信息
 			chunk := DocumentChunk{
 				Content: chunkText,
 				Source:  filepath.Base(path),
@@ -354,12 +516,42 @@ func (t *TutorAgent) vectorizeDocuments(ctx context.Context, state TutorState) (
 		}
 	}
 
-	// 在返回前保存映射表
 	state.NodeIDToChunkIndex = nodeIDToChunkIndex
 
 	fmt.Printf("\n✅ 向量化完成！总共处理 %d 个文档块\n", len(state.DocumentChunks))
+
+	// ✨✨✨ 新增：保存数据到磁盘 ✨✨✨
+	fmt.Print("\n💾 正在保存索引数据...")
+	if err := t.savePersistedData(state); err != nil {
+		fmt.Printf("\n⚠️  保存失败: %v\n", err)
+		fmt.Println("   （不影响当前会话，但下次启动需要重新创建索引）")
+	} else {
+		fmt.Println(" 完成！")
+		fmt.Printf("   数据已保存到: %s\n", state.DataDir)
+	}
+
 	state.Stage = "vectorization_complete"
 	return state, nil
+}
+
+// 新增：保存持久化数据
+func (t *TutorAgent) savePersistedData(state TutorState) error {
+	// 1. 保存元数据
+	if err := t.saveMetadata(state); err != nil {
+		return fmt.Errorf("保存元数据失败: %v", err)
+	}
+
+	// 2. 保存 HNSW 索引
+	hnswDir := filepath.Join(state.DataDir, HNSWSubDir)
+	if err := os.MkdirAll(hnswDir, 0755); err != nil {
+		return fmt.Errorf("创建 HNSW 目录失败: %v", err)
+	}
+
+	if err := state.VectorIndex.SaveToLance(hnswDir); err != nil {
+		return fmt.Errorf("保存 HNSW 索引失败: %v", err)
+	}
+
+	return nil
 }
 
 // analyzeDocuments 使用 AI 分析文档内容
