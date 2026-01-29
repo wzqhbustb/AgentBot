@@ -102,8 +102,14 @@ func (h *Header) WriteTo(w io.Writer) (int64, error) {
 	binary.Write(buf, ByteOrder, h.PageSize)
 	binary.Write(buf, ByteOrder, h.Reserved)
 
-	// Serialize schema to JSON (simple approach for Phase 2)
+	// Serialize schema to JSON
 	schemaJSON := serializeSchemaToJSON(h.Schema)
+
+	// Validate schema size before writing
+	if len(schemaJSON) > MaxSchemaSize {
+		return 0, fmt.Errorf("schema too large: %d bytes (max %d)", len(schemaJSON), MaxSchemaSize)
+	}
+
 	schemaLen := int32(len(schemaJSON))
 	binary.Write(buf, ByteOrder, schemaLen)
 	buf.Write(schemaJSON)
@@ -140,10 +146,15 @@ func (h *Header) ReadFrom(r io.Reader) (int64, error) {
 		return int64(n), err
 	}
 
-	// Read schema length
+	// Read schema length with validation
 	var schemaLen int32
 	if err := binary.Read(r, ByteOrder, &schemaLen); err != nil {
 		return int64(n) + 4, NewFileError("read schema length", err)
+	}
+
+	// Validate schema length using constant
+	if schemaLen < 0 || schemaLen > MaxSchemaSize {
+		return int64(n) + 4, fmt.Errorf("invalid schema length: %d (max %d)", schemaLen, MaxSchemaSize)
 	}
 
 	// Read schema JSON
@@ -162,35 +173,37 @@ func (h *Header) ReadFrom(r io.Reader) (int64, error) {
 	return int64(n) + 4 + int64(schemaLen), nil
 }
 
-// Helper functions for schema serialization (simplified for Phase 2)
+// serializeSchemaToJSON with proper escaping
 func serializeSchemaToJSON(schema *arrow.Schema) []byte {
-	var buf bytes.Buffer
-	buf.WriteString("{\"fields\":[")
+	// Use standard json.Marshal for safety
+	type fieldJSON struct {
+		Name     string `json:"name"`
+		Type     string `json:"type"`
+		Nullable bool   `json:"nullable"`
+	}
 
+	type schemaJSON struct {
+		Fields   []fieldJSON       `json:"fields"`
+		Metadata map[string]string `json:"metadata"`
+	}
+
+	fields := make([]fieldJSON, schema.NumFields())
 	for i := 0; i < schema.NumFields(); i++ {
-		if i > 0 {
-			buf.WriteString(",")
-		}
 		field := schema.Field(i)
-
-		// Serialize type name with full information
-		typeName := serializeTypeName(field.Type)
-		fmt.Fprintf(&buf, "{\"name\":\"%s\",\"type\":\"%s\",\"nullable\":%t}",
-			field.Name, typeName, field.Nullable)
-	}
-
-	buf.WriteString("],\"metadata\":{")
-	first := true
-	for k, v := range schema.Metadata() {
-		if !first {
-			buf.WriteString(",")
+		fields[i] = fieldJSON{
+			Name:     field.Name,
+			Type:     serializeTypeName(field.Type),
+			Nullable: field.Nullable,
 		}
-		fmt.Fprintf(&buf, "\"%s\":\"%s\"", k, v)
-		first = false
 	}
-	buf.WriteString("}}")
 
-	return buf.Bytes()
+	data := schemaJSON{
+		Fields:   fields,
+		Metadata: schema.Metadata(),
+	}
+
+	result, _ := json.Marshal(data) // Error impossible with these types
+	return result
 }
 
 // serializeTypeName converts DataType to string representation
@@ -204,13 +217,15 @@ func serializeTypeName(dt arrow.DataType) string {
 		return "float32"
 	case *arrow.Float64Type:
 		return "float64"
+	case *arrow.BinaryType:
+		return "binary"
 	case *arrow.StringType:
 		return "string"
 	case *arrow.FixedSizeListType:
-		elemType := serializeTypeName(t.Elem())                           // 使用 Elem() 方法
-		return fmt.Sprintf("fixed_size_list[%d]<%s>", t.Size(), elemType) // 使用 Size() 方法
+		elemType := serializeTypeName(t.Elem())
+		return fmt.Sprintf("fixed_size_list[%d]<%s>", t.Size(), elemType)
 	default:
-		return dt.Name() // Fallback to Type.Name()
+		return dt.Name()
 	}
 }
 
@@ -282,7 +297,7 @@ func parseDataType(typeStr string) (arrow.DataType, error) {
 }
 
 // parseFixedSizeListType parses "fixed_size_list[768]<float32>" format
-func parseFixedSizeListType(typeStr string) (arrow.DataType, error) { // 返回 DataType 而不是 *FixedSizeListType
+func parseFixedSizeListType(typeStr string) (arrow.DataType, error) {
 	// Extract size: "fixed_size_list[768]<float32>" -> 768
 	sizeStart := strings.Index(typeStr, "[")
 	sizeEnd := strings.Index(typeStr, "]")
@@ -294,6 +309,11 @@ func parseFixedSizeListType(typeStr string) (arrow.DataType, error) { // 返回 
 	size, err := strconv.Atoi(sizeStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid list size: %s", sizeStr)
+	}
+
+	// Validate size range
+	if size <= 0 || size > MaxVectorDimension {
+		return nil, fmt.Errorf("invalid list size: %d (must be 1-%d)", size, MaxVectorDimension)
 	}
 
 	// Extract element type: "fixed_size_list[768]<float32>" -> float32

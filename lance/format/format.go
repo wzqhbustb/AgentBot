@@ -24,6 +24,12 @@ const (
 
 	// FooterSize is the fixed size of the footer
 	FooterSize = 4096 // 4 KB
+
+	// MaxSchemaSize is the maximum size of serialized schema (1MB)
+	MaxSchemaSize = 1024 * 1024
+
+	// MaxVectorDimension is the maximum dimension for vector types
+	MaxVectorDimension = 100000
 )
 
 // Encoding types for column data
