@@ -24,6 +24,17 @@ import (
 // For test: /Users/wangyang/hello_langchain/langgraphdemogo/test.md
 // For test: /Users/wangyang/hello_langchain/langgraphdemogo/test2.md
 
+// HNSW的M参数是什么？
+// 如何优化查询性能？
+// 余弦相似度的计算公式
+// 欧氏距离和余弦距离有什么区别？
+// RAG解决了什么问题？
+// 为什么HNSW比其他算法快？
+// 向量检索可以用在哪些场景？
+// 如何选择合适的Embedding模型？
+// HNSW和IVF有什么区别？
+// 不同分块策略的优缺点
+
 type LLMType int
 
 const (
